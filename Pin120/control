@@ -1,0 +1,9 @@
+Package: com.wjf.pin120
+Name: Pin120
+Version: 1.1.0
+Architecture: iphoneos-arm
+Description: System-wide 120Hz ProMotion pin via SpringBoard/backboardd. Works even for jailbreak-blacklisted apps.
+Maintainer: wjf
+Author: wjf
+Section: Tweaks
+Depends: firmware (>= 15.0)

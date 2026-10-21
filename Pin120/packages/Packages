@@ -1,0 +1,30 @@
+Package: com.wjf.pin120
+Name: Pin120
+Version: 1.1.0
+Architecture: iphoneos-arm64e
+Maintainer: wjf
+Author: wjf
+Section: Tweaks
+Depends: firmware (>= 15.0)
+Description: System-wide 120Hz ProMotion pin via SpringBoard/backboardd.
+Filename: com.wjf.pin120_1.1.0_iphoneos-arm64e.deb
+Size: 3048
+MD5sum: 55c6c3f1ddaa66844b7a11fa595b256d
+SHA1: d57983c953ddabf793a96c1c615f24d524b2ecda
+SHA256: 9860d85189fbaa09cf1d80012fc805ef18e31efba7c8e5c02a05f02dc3f68fec
+
+Package: com.wjf.ballkey
+Name: BallKey
+Version: 1.0.0
+Architecture: iphoneos-arm64e
+Maintainer: wjf
+Author: wjf
+Section: Tweaks
+Depends: firmware (>= 15.0)
+Description: Keyboard/mouse to touch mapping (backboardd engine + SpringBoard overlay).
+Filename: com.wjf.ballkey_1.0.0_iphoneos-arm64e.deb
+Size: 16186
+MD5sum: 38775c6bf88a9425d00fd98bf73171fb
+SHA1: 34e53d076458473d983704e0781bef3b752e29b2
+SHA256: 53c537d95e79f32a1c3c0986f35c35de523fe877a150ed939cc8589d34ab838f
+

@@ -1,0 +1,8 @@
+Origin: Pin120
+Label: Pin120
+Suite: stable
+Version: 1.0
+Codename: pin120
+Architectures: iphoneos-arm64e
+Components: main
+Description: Local Pin120 tweak repo

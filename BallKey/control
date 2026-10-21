@@ -1,0 +1,9 @@
+Package: com.wjf.ballkey
+Name: BallKey
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Keyboard/mouse to touch mapping (backboardd engine + SpringBoard overlay).
+Maintainer: wjf
+Author: wjf
+Section: Tweaks
+Depends: firmware (>= 15.0)
