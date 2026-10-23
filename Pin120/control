@@ -1,8 +1,8 @@
 Package: com.wjf.pin120
 Name: Pin120
-Version: 1.1.0
+Version: 2.0.0
 Architecture: iphoneos-arm
-Description: System-wide 120Hz ProMotion pin via SpringBoard/backboardd. Works even for jailbreak-blacklisted apps.
+Description: Unlocks 120fps in games on 60Hz iPads (Pro 2018/A12X). Spoofs UIScreen.maximumFramesPerSecond, forces CADisplayLink to 120Hz and pins Unity targetFrameRate. HUD in the top-left shows live status.
 Maintainer: wjf
 Author: wjf
 Section: Tweaks

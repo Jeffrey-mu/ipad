@@ -2,13 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>Filter</key>
-	<dict>
-		<key>Executables</key>
-		<array>
-			<string>SpringBoard</string>
-			<string>backboardd</string>
-		</array>
-	</dict>
+	<!--
+		故意不带 Filter：注入到所有进程。
+		刷新率/帧率是「前台 App 自己」向系统申请的，只有进到游戏进程里才能改；
+		Tweak.x 的 %ctor 只会对第三方 App 启用 hook，系统进程完全不碰。
+	-->
 </dict>
 </plist>

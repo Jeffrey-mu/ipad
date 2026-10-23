@@ -1,8 +1,64 @@
 #import "ViewController.h"
-#import <ReplayKit/ReplayKit.h>
+#import <QuartzCore/QuartzCore.h>
+#import <sys/sysctl.h>
+
+#pragma mark - 设备信息
+
+static NSString *P120DeviceIdentifier(void)
+{
+    size_t size = 0;
+    if (sysctlbyname("hw.machine", NULL, &size, NULL, 0) != 0 || size == 0) return @"unknown";
+    char *buf = malloc(size);
+    if (!buf) return @"unknown";
+    NSString *result = @"unknown";
+    if (sysctlbyname("hw.machine", buf, &size, NULL, 0) == 0) {
+        result = [NSString stringWithUTF8String:buf] ?: @"unknown";
+    }
+    free(buf);
+    return result;
+}
+
+#pragma mark - 刷新率测量
+
+@interface P120Meter : NSObject
+- (void)tick:(CADisplayLink *)link;
+@end
+
+@implementation P120Meter
+{
+    NSTimeInterval _last;
+    double _hz;
+}
+- (void)tick:(CADisplayLink *)link
+{
+    NSTimeInterval now = link.timestamp;
+    if (_last > 0) {
+        double dt = now - _last;
+        if (dt > 0.0005) {
+            double hz = 1.0 / dt;
+            _hz = (_hz > 0) ? (_hz * 0.85 + hz * 0.15) : hz;
+        }
+    }
+    _last = now;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self refresh];
+    });
+}
+- (void)refresh
+{
+    NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+    [nc postNotificationName:@"P120MeterUpdate" object:@(self->_hz)];
+}
+@end
+
+#pragma mark - ViewController
 
 @interface ViewController ()
-@property (nonatomic, strong) RPSystemBroadcastPickerView *picker;
+@property (nonatomic, strong) UILabel *bigLabel;
+@property (nonatomic, strong) UILabel *detailLabel;
+@property (nonatomic, strong) UILabel *infoLabel;
+@property (nonatomic, strong) CADisplayLink *link;
+@property (nonatomic, strong) P120Meter *meter;
 @end
 
 @implementation ViewController
@@ -14,61 +70,104 @@
 
     UILabel *title = [[UILabel alloc] init];
     title.translatesAutoresizingMaskIntoConstraints = NO;
-    title.text = @"Pin120";
-    title.font = [UIFont systemFontOfSize:36 weight:UIFontWeightBold];
+    title.text = @"Pin120 检测";
+    title.font = [UIFont systemFontOfSize:32 weight:UIFontWeightBold];
     [self.view addSubview:title];
 
-    UILabel *subtitle = [[UILabel alloc] init];
-    subtitle.translatesAutoresizingMaskIntoConstraints = NO;
-    subtitle.text = @"一键锁定系统 120Hz";
-    subtitle.font = [UIFont systemFontOfSize:17];
-    subtitle.textColor = [UIColor secondaryLabelColor];
-    [self.view addSubview:subtitle];
+    self.bigLabel = [[UILabel alloc] init];
+    self.bigLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.bigLabel.text = @"-- Hz";
+    self.bigLabel.font = [UIFont monospacedDigitSystemFontOfSize:52 weight:UIFontWeightBold];
+    self.bigLabel.textColor = [UIColor systemBlueColor];
+    [self.view addSubview:self.bigLabel];
 
-    UILabel *steps = [[UILabel alloc] init];
-    steps.translatesAutoresizingMaskIntoConstraints = NO;
-    steps.numberOfLines = 0;
-    steps.font = [UIFont systemFontOfSize:15];
-    steps.text = @"使用方法：\n1. 点下方按钮，弹出「屏幕广播」面板\n2. 选择「Pin120广播」→ 开始广播\n3. 等 3 秒倒数结束，切到游戏即可\n4. 停止：点状态栏红条 → 停止\n\n原理：系统在广播/录屏时会把 ProMotion\n锁定在 120Hz。本工具开启广播后直接丢弃\n所有画面帧，不录制、不占存储，只保留\n锁帧效果——等价于你手动开录屏，但不会\n生成任何视频文件。\n\n注意：\n· 状态栏会出现红色/紫色录制指示（系统强制）\n· 请关闭低电量模式（会强制 60Hz）\n· 广播停止后系统恢复自适应刷新率";
-    steps.textColor = [UIColor labelColor];
-    [self.view addSubview:steps];
+    self.detailLabel = [[UILabel alloc] init];
+    self.detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.detailLabel.text = @"测量中…";
+    self.detailLabel.font = [UIFont monospacedDigitSystemFontOfSize:15 weight:UIFontWeightRegular];
+    self.detailLabel.textColor = [UIColor secondaryLabelColor];
+    [self.view addSubview:self.detailLabel];
 
-    self.picker = [[RPSystemBroadcastPickerView alloc] initWithFrame:CGRectZero];
-    self.picker.preferredExtension = @"com.wjf.pin120app.broadcast";
-    self.picker.showsMicrophoneButton = NO;
-    [self.view addSubview:self.picker];
+    self.infoLabel = [[UILabel alloc] init];
+    self.infoLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.infoLabel.numberOfLines = 0;
+    self.infoLabel.font = [UIFont systemFontOfSize:14];
+    self.infoLabel.textColor = [UIColor labelColor];
+    [self.view addSubview:self.infoLabel];
 
     [NSLayoutConstraint activateConstraints:@[
         [title.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [title.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:36],
-        [subtitle.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [subtitle.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:6],
-        [steps.leadingAnchor constraintEqualToAnchor:self.view.layoutMarginsGuide.leadingAnchor constant:12],
-        [steps.trailingAnchor constraintEqualToAnchor:self.view.layoutMarginsGuide.trailingAnchor constant:-12],
-        [steps.topAnchor constraintEqualToAnchor:subtitle.bottomAnchor constant:24],
-        [self.picker.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.picker.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-32],
-        [self.picker.widthAnchor constraintEqualToConstant:260],
-        [self.picker.heightAnchor constraintEqualToConstant:56],
+        [title.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:24],
+
+        [self.bigLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.bigLabel.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:18],
+
+        [self.detailLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.detailLabel.topAnchor constraintEqualToAnchor:self.bigLabel.bottomAnchor constant:4],
+
+        [self.infoLabel.leadingAnchor constraintEqualToAnchor:self.view.layoutMarginsGuide.leadingAnchor constant:16],
+        [self.infoLabel.trailingAnchor constraintEqualToAnchor:self.view.layoutMarginsGuide.trailingAnchor constant:-16],
+        [self.infoLabel.topAnchor constraintEqualToAnchor:self.detailLabel.bottomAnchor constant:24],
     ]];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(meterUpdate:)
+                                                 name:@"P120MeterUpdate"
+                                               object:nil];
+    [self refreshInfo];
 }
 
-- (void)viewDidLayoutSubviews
+- (void)viewWillAppear:(BOOL)animated
 {
-    [super viewDidLayoutSubviews];
-    for (UIView *sub in self.picker.subviews) {
-        if ([sub isKindOfClass:[UIButton class]]) {
-            UIButton *btn = (UIButton *)sub;
-            btn.frame = self.picker.bounds;
-            btn.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            UIButtonConfiguration *cfg = [UIButtonConfiguration filledButtonConfiguration];
-            cfg.title = @"开始锁定 120Hz";
-            cfg.cornerStyle = UIButtonConfigurationCornerStyleMedium;
-            cfg.contentInsets = NSDirectionalEdgeInsetsMake(12, 24, 12, 24);
-            btn.configuration = cfg;
-            break;
-        }
+    [super viewWillAppear:animated];
+    if (!self.link) {
+        self.meter = [P120Meter new];
+        self.link = [CADisplayLink displayLinkWithTarget:self.meter selector:@selector(tick:)];
+        // 请求 120：能拿到多少就说明面板真实能力有多少
+        self.link.preferredFrameRateRange = CAFrameRateRangeMake(120.0f, 120.0f, 120.0f);
+        [self.link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     }
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+    [self.link invalidate];
+    self.link = nil;
+}
+
+- (void)meterUpdate:(NSNotification *)note
+{
+    double hz = [note.object doubleValue];
+    self.bigLabel.text = [NSString stringWithFormat:@"%.1f Hz", hz];
+    self.detailLabel.text = [NSString stringWithFormat:@"屏幕上报上限 %ld fps",
+                             (long)[UIScreen mainScreen].maximumFramesPerSecond];
+}
+
+- (void)refreshInfo
+{
+    NSString *model = P120DeviceIdentifier();
+    NSString *os = [[NSProcessInfo processInfo] operatingSystemVersionString];
+    NSString *screen = [NSString stringWithFormat:@"%@ x %@",
+                        NSStringFromCGSize([UIScreen mainScreen].bounds.size),
+                        NSStringFromCGSize([UIScreen mainScreen].nativeBounds.size)];
+
+    self.infoLabel.text =
+        [NSString stringWithFormat:
+         @"机型 %@\n系统 %@\n屏幕 %@\n\n"
+         @"怎么让游戏跑到 120fps\n"
+         @"1. 装 Pin120 插件（com.wjf.pin120 2.0），它会注入游戏进程，\n"
+         @"   把 UIScreen.maximumFramesPerSecond 伪造成 120、\n"
+         @"   并强制 CADisplayLink / Unity targetFrameRate = 120。\n"
+         @"2. 进游戏后看左上角 P120 挂件：\n"
+         @"   「引擎请求」= 游戏自己想要的帧率，「Unity target」= 引擎上限。\n"
+         @"   单击展开，长按收起或屏蔽当前 App。\n"
+         @"3. 装完插件后游戏画质设置里通常会多出 120 帧选项。\n\n"
+         @"注意：iPad Pro 2018(12.9\"/A12X) 的屏幕物理上只有 60Hz，\n"
+         @"插件能做的是让游戏按 120fps 渲染（降低延迟、帧率数字变 120），\n"
+         @"屏幕本身仍然只能显示 60 帧。真·120Hz 需要 ProMotion 机型\n"
+         @"（iPad Pro 2020 M1 及以后）。",
+         model, os, screen];
 }
 
 @end
