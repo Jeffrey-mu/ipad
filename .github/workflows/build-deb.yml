@@ -1,4 +1,4 @@
-﻿name: build-deb
+name: build-deb
 
 # No Mac needed: build the tweaks on a GitHub-hosted macOS runner.
 # Trigger: push to main, or run it manually from the Actions tab.
