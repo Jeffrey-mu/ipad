@@ -122,6 +122,7 @@ static UIWindow *gHUDWindow = nil;
 static UIView   *gHUDBox    = nil;
 static UILabel  *gHUDLabel  = nil;
 static BOOL      gHUDExpanded = NO;
+static NSInteger gHUDAttempts = 0;
 
 @implementation P120HUD
 
@@ -229,6 +230,13 @@ static void P120ShowHUD(void)
     if (gHUDWindow) { gHUDWindow.hidden = NO; return; }
     if (P120HiddenForCurrentApp()) return;
 
+    // 很多 Unity 游戏用老式 AppDelegate 生命周期，根本没有 UIScene。
+    // scene-based App 又需要等 scene 连上，所以这里分三路处理。
+    BOOL sceneBased = NO;
+    if (@available(iOS 13.0, *)) {
+        sceneBased = ([[NSBundle mainBundle] objectForInfoDictionaryKey:@"UIApplicationSceneManifest"] != nil);
+    }
+
     UIWindowScene *scene = nil;
     if (@available(iOS 13.0, *)) {
         for (UIScene *s in [UIApplication sharedApplication].connectedScenes) {
@@ -238,8 +246,21 @@ static void P120ShowHUD(void)
                 break;
             }
         }
-        if (!scene) return;
-        gHUDWindow = [[UIWindow alloc] initWithWindowScene:scene];
+        if (sceneBased && !scene && gHUDAttempts < 10) {
+            // scene 还没连上，过一会儿再试
+            gHUDAttempts++;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ P120ShowHUD(); });
+            return;
+        }
+    }
+
+    if (@available(iOS 13.0, *)) {
+        if (scene) {
+            gHUDWindow = [[UIWindow alloc] initWithWindowScene:scene];
+        } else {
+            gHUDWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        }
     } else {
         gHUDWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     }
