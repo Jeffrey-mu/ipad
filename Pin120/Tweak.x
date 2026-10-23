@@ -1,20 +1,20 @@
-// Pin120 2.0 — 让 60Hz 的 iPad Pro (2018 / A12X) 上的游戏跑 120fps
+// Pin120 2.2 — 让 iPad Pro (2018 / A12X) 的 ProMotion 稳定停在 120Hz
 //
 // 旧版为什么完全没用：
 //   v1 的 Filter 只有 SpringBoard / backboardd，游戏进程根本没被注入；
 //   而渲染刷新率是「前台 App 自己」向系统申请的，跟 SpringBoard 无关。
 //   （ReplayKit 广播同样管不到别的 App 的帧率，所以 Pin120App 那条路走不通。）
 //
-// 现在全部在「游戏进程内」完成，改写游戏决定帧率的三个点：
-//   1) UIScreen.maximumFramesPerSecond  →  伪造为 120
-//      游戏判断「这台设备支不支持 120 帧」用的就是它，60Hz 机型返回 60，
-//      于是 120 帧选项被隐藏/降级，帧率被锁在 60/80。
+// 这台机器本身是 ProMotion 120Hz 屏，但 iOS 会自适应在 120 / 80 / 60 之间跳。
+// 全部在「游戏进程内」完成，改写游戏决定帧率的三个点，并每秒重压一次：
+//   1) UIScreen.maximumFramesPerSecond  →  恒为 120
+//      游戏判断「这台设备支不支持 120 帧」用的就是它。
 //   2) CADisplayLink.preferredFramesPerSecond / preferredFrameRateRange  →  强制 120
 //      引擎(Unity/Unreal)用它决定渲染节奏，游戏里往往写死 60/80。
 //   3) Unity 原生 Application.targetFrameRate (UnityGet/SetTargetFrameRate)  →  强制 120
-//      绕开游戏自己设置的帧率上限（80fps 多半就是从这条路来的）。
-//   4) 可选：伪造 hw.machine 为 M1 iPad Pro (iPad13,4)
-//      少数游戏是按机型白名单判断 120Hz 支持的。
+//      绕开游戏自己设置的帧率上限。
+//   4) 可选：伪装 hw.machine 为 M1 iPad Pro + 伪装 thermalState / 低电量
+//      有些游戏是按机型白名单或温度状态自己降画质/降帧率的。
 //
 // 注入范围：plist 不带 Filter → 所有进程都加载；%ctor 里只对第三方 App 生效，
 // 系统进程(SpringBoard/UIKit/守护进程)不受任何影响。
@@ -123,11 +123,12 @@ static void P120HideCurrentApp(void)
 - (void)handleLongPress:(UILongPressGestureRecognizer *)sender;
 @end
 
-static UIWindow *gHUDWindow = nil;
 static UIView   *gHUDBox    = nil;
 static UILabel  *gHUDLabel  = nil;
-static BOOL      gHUDExpanded = NO;
-static NSInteger gHUDAttempts = 0;
+static BOOL      gHUDExpanded = YES;   // 启动先展开几秒，方便找到
+static BOOL      gHUDUserTouched = NO;
+static BOOL      gHUDDismissed = NO;
+static NSArray  *gHUDConstraints = nil;
 
 @implementation P120HUD
 
@@ -141,6 +142,7 @@ static NSInteger gHUDAttempts = 0;
 
 - (void)handleTap:(UITapGestureRecognizer *)sender
 {
+    gHUDUserTouched = YES;
     // 收起状态：单击展开详情；展开状态：单击切换模式（关 / 标准 / 标准+机型伪装）
     if (gHUDExpanded) P120CycleMode();
     else              P120ToggleHUD();
@@ -149,11 +151,14 @@ static NSInteger gHUDAttempts = 0;
 - (void)handleLongPress:(UILongPressGestureRecognizer *)sender
 {
     if (sender.state != UIGestureRecognizerStateBegan) return;
+    gHUDUserTouched = YES;
     if (gHUDExpanded) {
-        P120ToggleHUD();       // 展开状态下长按 = 收起详情
+        P120ToggleHUD();          // 展开状态下长按 = 收起详情
     } else {
-        P120HideCurrentApp();  // 收起状态下长按 = 本 App 不再显示
-        gHUDWindow.hidden = YES;
+        P120HideCurrentApp();     // 收起状态下长按 = 本 App 不再显示
+        gHUDDismissed = YES;
+        gHUDBox.hidden = YES;
+        [gHUDBox removeFromSuperview];
     }
 }
 
@@ -248,89 +253,100 @@ static void P120CycleMode(void)
 
 static void P120ToggleHUD(void)
 {
-    if (!gHUDWindow) return;
+    if (!gHUDBox) return;
     gHUDExpanded = !gHUDExpanded;
+    gLastHUD = 0;              // 跳过节流，立刻刷新
     P120UpdateHUD();
+}
+
+// 直接挂到 App 自己的 key window 上。
+// 比单独建一个 UIWindow 稳得多：不管游戏走不走 UIScene、启动多慢，都能显示。
+static UIWindow *P120KeyWindow(void)
+{
+    UIWindow *fallback = nil;
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *s in [UIApplication sharedApplication].connectedScenes) {
+            if (![s isKindOfClass:[UIWindowScene class]]) continue;
+            for (UIWindow *w in ((UIWindowScene *)s).windows) {
+                if (w.isKeyWindow) return w;
+                if (!fallback && !w.hidden && w.bounds.size.width > 0) fallback = w;
+            }
+        }
+    }
+    if (fallback) return fallback;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    return [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
+}
+
+static void P120AttachHUD(void)
+{
+    if (!gHUDBox || gHUDDismissed || gHUDBox.hidden) return;
+    if (P120HiddenForCurrentApp()) return;
+
+    UIWindow *host = P120KeyWindow();
+    if (!host) return;
+    if (gHUDBox.superview == host) { [host bringSubviewToFront:gHUDBox]; return; }
+
+    if (gHUDConstraints) { [NSLayoutConstraint deactivateConstraints:gHUDConstraints]; gHUDConstraints = nil; }
+    [gHUDBox removeFromSuperview];
+    gHUDBox.translatesAutoresizingMaskIntoConstraints = NO;
+    [host addSubview:gHUDBox];
+    gHUDConstraints = @[
+        [gHUDBox.leadingAnchor constraintEqualToAnchor:host.safeAreaLayoutGuide.leadingAnchor constant:8],
+        [gHUDBox.topAnchor constraintEqualToAnchor:host.safeAreaLayoutGuide.topAnchor constant:8],
+    ];
+    [NSLayoutConstraint activateConstraints:gHUDConstraints];
+    [host bringSubviewToFront:gHUDBox];
 }
 
 static void P120ShowHUD(void)
 {
-    if (gHUDWindow) { gHUDWindow.hidden = NO; return; }
     if (P120HiddenForCurrentApp()) return;
 
-    // 很多 Unity 游戏用老式 AppDelegate 生命周期，根本没有 UIScene。
-    // scene-based App 又需要等 scene 连上，所以这里分三路处理。
-    BOOL sceneBased = NO;
-    if (@available(iOS 13.0, *)) {
-        sceneBased = ([[NSBundle mainBundle] objectForInfoDictionaryKey:@"UIApplicationSceneManifest"] != nil);
-    }
+    if (!gHUDBox) {
+        gHUDBox = [[UIView alloc] init];
+        gHUDBox.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.62];
+        gHUDBox.layer.cornerRadius = 7;
+        gHUDBox.layer.masksToBounds = YES;
+        gHUDBox.userInteractionEnabled = YES;
 
-    UIWindowScene *scene = nil;
-    if (@available(iOS 13.0, *)) {
-        for (UIScene *s in [UIApplication sharedApplication].connectedScenes) {
-            if ([s isKindOfClass:[UIWindowScene class]] &&
-                s.activationState == UISceneActivationStateForegroundActive) {
-                scene = (UIWindowScene *)s;
-                break;
+        gHUDLabel = [[UILabel alloc] init];
+        gHUDLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        gHUDLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightMedium];
+        gHUDLabel.textColor = [UIColor whiteColor];
+        gHUDLabel.numberOfLines = 0;
+        gHUDLabel.text = @"Pin120";
+        [gHUDBox addSubview:gHUDLabel];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [gHUDLabel.topAnchor constraintEqualToAnchor:gHUDBox.topAnchor constant:3],
+            [gHUDLabel.bottomAnchor constraintEqualToAnchor:gHUDBox.bottomAnchor constant:-3],
+            [gHUDLabel.leadingAnchor constraintEqualToAnchor:gHUDBox.leadingAnchor constant:6],
+            [gHUDLabel.trailingAnchor constraintEqualToAnchor:gHUDBox.trailingAnchor constant:-6],
+        ]];
+
+        P120HUD *hud = [P120HUD shared];
+        [gHUDBox addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:hud action:@selector(handleTap:)]];
+        UILongPressGestureRecognizer *press =
+            [[UILongPressGestureRecognizer alloc] initWithTarget:hud action:@selector(handleLongPress:)];
+        press.minimumPressDuration = 0.45;
+        [gHUDBox addGestureRecognizer:press];
+
+        // 启动先展开 5 秒，方便一眼看到；用户碰过就不再自动收起
+        gHUDExpanded = YES;
+        gLastHUD = 0;
+        P120UpdateHUD();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if (!gHUDUserTouched) {
+                gHUDExpanded = NO;
+                gLastHUD = 0;
+                P120UpdateHUD();
             }
-        }
-        if (sceneBased && !scene && gHUDAttempts < 10) {
-            // scene 还没连上，过一会儿再试
-            gHUDAttempts++;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)),
-                           dispatch_get_main_queue(), ^{ P120ShowHUD(); });
-            return;
-        }
+        });
     }
-
-    if (@available(iOS 13.0, *)) {
-        if (scene) {
-            gHUDWindow = [[UIWindow alloc] initWithWindowScene:scene];
-        } else {
-            gHUDWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        }
-    } else {
-        gHUDWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    }
-    gHUDWindow.windowLevel = UIWindowLevelAlert + 100;
-    gHUDWindow.backgroundColor = [UIColor clearColor];
-
-    UIViewController *root = [[UIViewController alloc] init];
-    root.view.backgroundColor = [UIColor clearColor];
-    gHUDWindow.rootViewController = root;
-
-    gHUDBox = [[UIView alloc] init];
-    gHUDBox.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
-    gHUDBox.layer.cornerRadius = 7;
-    gHUDBox.layer.masksToBounds = YES;
-    gHUDBox.userInteractionEnabled = YES;
-    [root.view addSubview:gHUDBox];
-
-    gHUDLabel = [[UILabel alloc] init];
-    gHUDLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightMedium];
-    gHUDLabel.textColor = [UIColor whiteColor];
-    gHUDLabel.numberOfLines = 0;
-    gHUDLabel.text = @"Pin120";
-    [gHUDBox addSubview:gHUDLabel];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [gHUDLabel.topAnchor constraintEqualToAnchor:gHUDBox.topAnchor constant:3],
-        [gHUDLabel.bottomAnchor constraintEqualToAnchor:gHUDBox.bottomAnchor constant:-3],
-        [gHUDLabel.leadingAnchor constraintEqualToAnchor:gHUDBox.leadingAnchor constant:6],
-        [gHUDLabel.trailingAnchor constraintEqualToAnchor:gHUDBox.trailingAnchor constant:-6],
-        [gHUDBox.leadingAnchor constraintEqualToAnchor:root.view.safeAreaLayoutGuide.leadingAnchor constant:6],
-        [gHUDBox.topAnchor constraintEqualToAnchor:root.view.safeAreaLayoutGuide.topAnchor constant:6],
-    ]];
-
-    P120HUD *hud = [P120HUD shared];
-    [gHUDBox addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:hud action:@selector(handleTap:)]];
-    UILongPressGestureRecognizer *press =
-        [[UILongPressGestureRecognizer alloc] initWithTarget:hud action:@selector(handleLongPress:)];
-    press.minimumPressDuration = 0.45;
-    [gHUDBox addGestureRecognizer:press];
-
-    P120UpdateHUD();
-    gHUDWindow.hidden = NO;   // 刻意不 makeKeyAndVisible，别抢游戏的第一响应者
+    P120AttachHUD();
 }
 
 #pragma mark - 工具
@@ -446,6 +462,10 @@ static void P120Watchdog(void)
     }
 
     P120TryHookUnity();
+
+    // 游戏可能重建/替换窗口，把挂件重新挂回当前 key window
+    P120AttachHUD();
+
     P120UpdateHUD();
 }
 
