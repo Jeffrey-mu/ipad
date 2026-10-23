@@ -1,17 +1,17 @@
 Package: com.wjf.pin120
 Name: Pin120
-Version: 2.2.0
+Version: 2.3.0
 Architecture: iphoneos-arm64e
 Maintainer: wjf
 Author: wjf
 Section: Tweaks
 Depends: firmware (>= 15.0)
-Description: Keeps ProMotion pinned at 120Hz in games on iPad Pro (2018/A12X). Forces UIScreen.maximumFramesPerSecond, CADisplayLink and Unity targetFrameRate to 120, and re-pins every display link once per second. In-game HUD (top-left, expanded 5s at launch) shows live refresh rate, thermal state, engine request and re-pin count.
-Filename: com.wjf.pin120_2.2.0_iphoneos-arm64e.deb
-Size: 9176
-MD5sum: 76267f44da9746c3814fd66e203cf068
-SHA1: 7558603cd4dc32b547edeeb806ae884c6d1a5c89
-SHA256: 399ca028ea34b88ec55542f3eb209b12865b054dfc291a116267401214a1a1c6
+Description: Keeps ProMotion pinned at 120Hz in games on iPad Pro (2018/A12X). Forces UIScreen.maximumFramesPerSecond, CADisplayLink and Unity targetFrameRate to 120 and re-pins every display link once per second. Adds a SpringBoard floating chip (proof of injection + live status: screen Hz, thermal state, engine request, re-pin count) and an in-game HUD.
+Filename: com.wjf.pin120_2.3.0_iphoneos-arm64e.deb
+Size: 11310
+MD5sum: bd561aef35e4e7f49eb2030a6f7c907c
+SHA1: dcdf4ffe7e18dca794613b4fcfd5552636b9a84f
+SHA256: 17ade396a5b58b793013ea132289e05b6bf01e11d06b16cf3d5afb2fa9920802
 
 Package: com.wjf.ballkey
 Name: BallKey
