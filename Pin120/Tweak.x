@@ -26,6 +26,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <substrate.h>
+#import <notify.h>
 #import <dlfcn.h>
 #import <errno.h>
 #import <stdlib.h>
@@ -67,6 +68,8 @@ static void P120UpdateHUD(void);
 static void P120ShowHUD(void);
 static void P120CycleMode(void);
 static void P120ToggleHUD(void);
+static void P120SBStart(void);
+static void P120SBToggle(void);
 
 #pragma mark - 配置读写
 
@@ -121,6 +124,8 @@ static void P120HideCurrentApp(void)
 + (instancetype)shared;
 - (void)handleTap:(UITapGestureRecognizer *)sender;
 - (void)handleLongPress:(UILongPressGestureRecognizer *)sender;
+- (void)sbTap:(UITapGestureRecognizer *)sender;
+- (void)sbPan:(UIPanGestureRecognizer *)sender;
 @end
 
 static UIView   *gHUDBox    = nil;
@@ -162,8 +167,21 @@ static NSArray  *gHUDConstraints = nil;
     }
 }
 
-@end
+- (void)sbTap:(UITapGestureRecognizer *)sender
+{
+    P120SBToggle();
+}
 
+- (void)sbPan:(UIPanGestureRecognizer *)sender
+{
+    UIView *v = sender.view;
+    if (!v) return;
+    CGPoint t = [sender translationInView:v.superview];
+    v.center = CGPointMake(v.center.x + t.x, v.center.y + t.y);
+    [sender setTranslation:CGPointZero inView:v.superview];
+}
+
+@end
 #pragma mark - HUD 绘制
 
 @interface P120Meter : NSObject
@@ -349,6 +367,181 @@ static void P120ShowHUD(void)
     P120AttachHUD();
 }
 
+#pragma mark - SpringBoard 悬浮条（铁证：插件到底有没有被加载）
+
+// 插件只要被加载，桌面上就会出现这个条子。它顺便显示游戏进程上报的状态。
+// 游戏进程 → SpringBoard 用 Darwin notify 传（沙盒之间唯一可靠的通道）。
+#define kP120StateNotify "com.wjf.pin120.state"
+
+static UIWindow *gSBWindow = nil;
+static UIView   *gSBBox = nil;
+static UILabel  *gSBLabel = nil;
+static BOOL      gSBExpanded = NO;
+static uint64_t  gRemoteState = 0;
+static NSTimeInterval gRemoteStamp = 0;
+static int       gSBToken = 0;
+static NSTimer  *gSBTimer = nil;
+
+static NSString *P120ThermalName(NSInteger t)
+{
+    switch (t) {
+        case 0:  return @"正常";
+        case 1:  return @"偏热";
+        case 2:  return @"过热";
+        case 3:  return @"极热";
+    }
+    return @"?";
+}
+
+static void P120SBLayout(void)
+{
+    if (!gSBWindow || !gSBLabel) return;
+
+    CGSize sz = [gSBLabel sizeThatFits:CGSizeMake(380, CGFLOAT_MAX)];
+    CGFloat w = ceil(sz.width) + 16.0, h = ceil(sz.height) + 8.0;
+    CGRect scr = [UIScreen mainScreen].bounds;
+    CGPoint c = gSBWindow.center;
+    if (c.x <= 1 || c.y <= 1) c = CGPointMake(scr.size.width / 2.0, scr.size.height - 90);
+    gSBWindow.frame = CGRectMake(c.x - w / 2.0, c.y - h / 2.0, w, h);
+    gSBLabel.frame = CGRectMake(8, 4, w - 16, h - 8);
+}
+
+static void P120SBRefresh(void)
+{
+    if (!gSBLabel) return;
+
+    NSInteger mode    = (NSInteger)(gRemoteState & 0x3);
+    NSInteger thermal = (NSInteger)((gRemoteState >> 2) & 0x3);
+    BOOL      lowPwr  = ((gRemoteState >> 4) & 0x1) != 0;
+    NSInteger hz      = (NSInteger)((gRemoteState >> 8) & 0xFF);
+    NSInteger engine  = (NSInteger)((gRemoteState >> 16) & 0xFF);
+    NSInteger unity   = (NSInteger)((gRemoteState >> 24) & 0xFF);
+    NSInteger relock  = (NSInteger)((gRemoteState >> 32) & 0xFFFF);
+
+    BOOL online = (gRemoteStamp > 0) &&
+                  ([NSDate timeIntervalSinceReferenceDate] - gRemoteStamp < 6.0);
+
+    if (!gSBExpanded) {
+        gSBLabel.text = online ? [NSString stringWithFormat:@"P120 %ldHz ✓", (long)hz]
+                               : @"P120 ▸ 点我";
+        return;
+    }
+
+    NSString *modeText = (mode == 0) ? @"关闭" : ((mode == 2) ? @"标准+机型伪装" : @"标准");
+    NSString *gameLine = online
+        ? [NSString stringWithFormat:@"游戏在线 · 屏幕 %ldHz · 引擎 %ld · Unity %ld", (long)hz, (long)engine, (long)unity]
+        : @"游戏未上报（没进游戏，或注入失败）";
+
+    gSBLabel.text = [NSString stringWithFormat:
+        @"Pin120 2.3 · SpringBoard 已注入 ✓\n"
+        @"%@\n"
+        @"模式 %@ · 热:%@ 低电:%@ · 重压 %ld",
+        gameLine, modeText, P120ThermalName(thermal), lowPwr ? @"开" : @"关", (long)relock];
+}
+
+static void P120SBToggle(void)
+{
+    gSBExpanded = !gSBExpanded;
+    P120SBRefresh();
+    P120SBLayout();
+}
+
+static void P120SBStart(void)
+{
+    if (gSBWindow) return;
+
+    gSBWindow = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 140, 32)];
+    gSBWindow.windowLevel = UIWindowLevelAlert + 100;
+    gSBWindow.backgroundColor = [UIColor clearColor];
+    gSBWindow.center = CGPointMake([UIScreen mainScreen].bounds.size.width / 2.0,
+                                   [UIScreen mainScreen].bounds.size.height - 96);
+    gSBWindow.rootViewController = [[UIViewController alloc] init];
+    gSBWindow.rootViewController.view.backgroundColor = [UIColor clearColor];
+
+    gSBBox = [[UIView alloc] initWithFrame:gSBWindow.bounds];
+    gSBBox.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.65];
+    gSBBox.layer.cornerRadius = 8;
+    gSBBox.layer.masksToBounds = YES;
+    gSBBox.userInteractionEnabled = YES;
+    [gSBWindow.rootViewController.view addSubview:gSBBox];
+
+    gSBLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    gSBLabel.font = [UIFont monospacedDigitSystemFontOfSize:11 weight:UIFontWeightMedium];
+    gSBLabel.textColor = [UIColor whiteColor];
+    gSBLabel.numberOfLines = 0;
+    gSBLabel.userInteractionEnabled = NO;
+    gSBLabel.text = @"P120";
+    [gSBBox addSubview:gSBLabel];
+
+    P120HUD *hud = [P120HUD shared];
+    [gSBBox addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:hud action:@selector(sbTap:)]];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:hud action:@selector(sbPan:)];
+    [gSBBox addGestureRecognizer:pan];
+
+    // 游戏进程上报的状态（Darwin notify，跨沙盒）
+    notify_register_dispatch(kP120StateNotify, &gSBToken, dispatch_get_main_queue(), ^(int token) {
+        uint64_t v = 0;
+        if (notify_get_state(token, &v) == NOTIFY_STATUS_OK) {
+            gRemoteState = v;
+            gRemoteStamp = [NSDate timeIntervalSinceReferenceDate];
+            P120SBRefresh();
+            P120SBLayout();
+        }
+    });
+
+    gSBTimer = [NSTimer timerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *t) {
+        P120SBRefresh();
+        P120SBLayout();
+    }];
+    [[NSRunLoop mainRunLoop] addTimer:gSBTimer forMode:NSRunLoopCommonModes];
+
+    P120SBRefresh();
+    P120SBLayout();
+    [gSBWindow makeKeyAndVisible];   // BallKey 同款做法，SpringBoard 里最稳
+}
+
+#pragma mark - 状态上报（给 SpringBoard 挂件看）
+
+static int gPostToken = 0;
+
+static void P120PostState(void)
+{
+    if (!gActive) return;
+    if (gPostToken == 0) {
+        if (notify_register_check(kP120StateNotify, &gPostToken) != NOTIFY_STATUS_OK) return;
+    }
+
+    NSInteger th = 0;
+    switch ([NSProcessInfo processInfo].thermalState) {
+        case NSProcessInfoThermalStateFair:     th = 1; break;
+        case NSProcessInfoThermalStateSerious:  th = 2; break;
+        case NSProcessInfoThermalStateCritical: th = 3; break;
+        default: th = 0; break;
+    }
+
+    uint64_t v = 0;
+    v |= (uint64_t)(gMode & 0x3);
+    v |= ((uint64_t)(th & 0x3)) << 2;
+    v |= (([NSProcessInfo processInfo].isLowPowerModeEnabled ? 1ull : 0ull) << 4);
+    v |= ((uint64_t)MIN((NSInteger)255, (NSInteger)(gMeasuredHz + 0.5))) << 8;
+    v |= ((uint64_t)MIN((NSInteger)255, MAX((NSInteger)0, gEngineFPS))) << 16;
+    v |= ((uint64_t)MIN((NSInteger)255, MAX((NSInteger)0, gUnityFPS))) << 24;
+    v |= ((uint64_t)MIN((NSInteger)65535, gRelockCount)) << 32;
+
+    notify_set_state(gPostToken, v);
+    notify_post(kP120StateNotify);
+}
+
+// 顺便在 App 自己的容器里留一份，用 Filza 就能看
+static void P120DumpStatus(void)
+{
+    NSString *text = gHUDLabel.text;
+    if (text.length == 0) text = @"Pin120 injected";
+    NSString *path = [[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"]
+                      stringByAppendingPathComponent:@"pin120.status.txt"];
+    [text writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
 #pragma mark - 工具
 
 static void P120TuneLink(CADisplayLink *link)
@@ -444,7 +637,11 @@ static int P120Uname(struct utsname *buf)
 // 排除「游戏过一会儿自己把帧率改回去」这种可能：改回去也会立刻被压回来。
 static void P120Watchdog(void)
 {
-    if (!gActive || gMode == P120ModeOff) return;
+    if (!gActive) return;
+
+    // 每秒给 SpringBoard 的悬浮条发一次状态（即使模式=关闭也发，方便排查）
+    P120PostState();
+    if (gMode == P120ModeOff) return;
 
     NSArray *links = gLinks.allObjects;
     if (links.count) {
@@ -467,6 +664,9 @@ static void P120Watchdog(void)
     P120AttachHUD();
 
     P120UpdateHUD();
+
+    static NSInteger dumpTick = 0;
+    if (++dumpTick % 5 == 0) P120DumpStatus();
 }
 
 #pragma mark - Hooks
@@ -549,6 +749,17 @@ static void P120Watchdog(void)
 
         // 必须在装 hook 之前取真实值
         gRealMaxFPS = [UIScreen mainScreen].maximumFramesPerSecond;
+
+        // SpringBoard：只负责桌面悬浮条（证明插件被加载 + 显示游戏上报的状态），
+        // 不碰任何帧率逻辑。
+        if ([gBundleID isEqualToString:@"com.apple.springboard"] ||
+            [gProcName isEqualToString:@"SpringBoard"]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                P120SBStart();
+                NSLog(@"[Pin120] SpringBoard chip started (2.3)");
+            });
+            return;
+        }
 
         BOOL isApple = [gBundleID hasPrefix:@"com.apple."];
         BOOL hasUI   = (NSClassFromString(@"UIApplication") != nil);
