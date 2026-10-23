@@ -45,15 +45,25 @@ jobs:
 
       - name: 编译 Pin120
         run: |
-          set -euo pipefail
+          set -o pipefail
           cd Pin120
-          make package FINALPACKAGE=1
+          make package FINALPACKAGE=1 2>&1 | tee ../ci-build.log
 
       - name: 编译 BallKey
         run: |
-          set -euo pipefail
+          set -o pipefail
           cd BallKey
-          make package FINALPACKAGE=1
+          make package FINALPACKAGE=1 2>&1 | tee -a ../ci-build.log
+
+      - name: 失败时把构建日志提交回仓库（方便排查）
+        if: failure()
+        run: |
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          ls -la ci-build.log || true
+          git add -f ci-build.log || true
+          git commit -m "ci: build log [skip ci]" || true
+          git push || true
 
       - name: 收集 deb
         run: |
