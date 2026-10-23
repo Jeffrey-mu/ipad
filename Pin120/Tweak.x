@@ -426,7 +426,7 @@ static int P120Uname(struct utsname *buf)
 
 %end
 
-%endgroup
+%end
 
 #pragma mark - 启动
 
