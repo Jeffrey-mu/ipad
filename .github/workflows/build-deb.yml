@@ -1,8 +1,12 @@
 ﻿name: build-deb
 
-# 娌℃湁 Mac 涔熻兘鎵撳寘锛欸itHub 浜戠 macOS 璺?theos锛屼骇鐗╁彂鍒?Release銆?# 瑙﹀彂鏂瑰紡锛歱ush 鍒?main锛屾垨鍦?Actions 椤甸潰鐐?"Run workflow"銆?# 浜х墿锛?#   https://github.com/Jeffrey-mu/ipad/releases/latest/download/Pin120.deb
+# No Mac needed: build the tweaks on a GitHub-hosted macOS runner.
+# Trigger: push to main, or run it manually from the Actions tab.
+#
+# Fixed download URLs (public repo, no login needed):
+#   https://github.com/Jeffrey-mu/ipad/releases/latest/download/Pin120.deb
 #   https://github.com/Jeffrey-mu/ipad/releases/latest/download/BallKey.deb
-# 杩欎咯 URL 鏄浐瀹氱殑锛宨Pad 涓?Safari 鎵撳紑灏辫兘瑁咃紙鍏紑浠撳簱锛屾棤闇€鐧诲綍锛夈€?
+
 on:
   push:
     branches: [main]
@@ -25,33 +29,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 瀹夎 Theos + iOS SDK
+      - name: Install Theos + iOS SDK
         run: |
           set -euo pipefail
           brew install ldid dpkg xz
+
+          # roothide/theos fork ships vendor/mod/roothide (the roothide package scheme).
+          # Upstream theos/theos does NOT have it.
           git clone --recursive --depth 1 https://github.com/roothide/theos.git "$HOME/theos"
 
-          # 鍙彇闇€瑕佺殑閭ｄ竴涓?SDK锛屽埆鎷夋暣涓?sdks 浠撳簱
+          # Only fetch the one SDK we need instead of the whole sdks repo.
           git clone --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$RUNNER_TEMP/sdks"
           ( cd "$RUNNER_TEMP/sdks" && git sparse-checkout set iPhoneOS16.5.sdk )
           mkdir -p "$HOME/theos/sdks"
           cp -R "$RUNNER_TEMP/sdks/iPhoneOS16.5.sdk" "$HOME/theos/sdks/"
 
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+          test -d "$HOME/theos/vendor/mod/roothide"
 
-      - name: 缂栬瘧 Pin120
+      - name: Build Pin120
         run: |
           set -o pipefail
           cd Pin120
           make package FINALPACKAGE=1 2>&1 | tee ../ci-build.log
 
-      - name: 缂栬瘧 BallKey
+      - name: Build BallKey
         run: |
           set -o pipefail
           cd BallKey
           make package FINALPACKAGE=1 2>&1 | tee -a ../ci-build.log
 
-      - name: 澶辫触鏃舵妸鏋勫缓鏃ュ織鎻愪氦鍥炰粨搴擄紙鏂逛究鎺掓煡锛?        if: failure()
+      - name: Commit build log on failure
+        if: failure()
         run: |
           git config user.name "ci-bot"
           git config user.email "ci-bot@users.noreply.github.com"
@@ -60,7 +69,7 @@ jobs:
           git commit -m "ci: build log [skip ci]" || true
           git push || true
 
-      - name: 鏀堕泦 deb
+      - name: Collect debs
         run: |
           set -euo pipefail
           mkdir -p out
@@ -68,25 +77,26 @@ jobs:
           cp "$(ls -t BallKey/packages/*.deb | head -1)" out/BallKey.deb
           ls -la out
 
-      - name: 涓婁紶 artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: debs
           path: out/*.deb
           if-no-files-found: error
 
-      - name: 鍙戝竷鍒?Release
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: 鏈€鏂版瀯寤?          body: |
-            鑷姩鏋勫缓 `${{ github.sha }}`
+          name: latest build
+          body: |
+            Automated build of `${{ github.sha }}`
 
-            * Pin120 2.0.0 鈥?60Hz iPad Pro 涓婅В閿佹父鎴?120fps
-            * BallKey 鈥?閿紶鏄犲皠
+            * Pin120 2.0.0 - unlock 120fps in games on a 60Hz iPad Pro (2018/A12X)
+            * BallKey - keyboard/mouse mapping
 
-            鍥哄畾涓嬭浇鍦板潃锛?            * /releases/latest/download/Pin120.deb
+            Direct download:
+            * /releases/latest/download/Pin120.deb
             * /releases/latest/download/BallKey.deb
           files: out/*.deb
           make_latest: true
-# trigger: 2026-10-23T19:39:37.5303953+08:00
