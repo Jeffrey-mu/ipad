@@ -96,3 +96,4 @@ jobs:
             * /releases/latest/download/BallKey.deb
           files: out/*.deb
           make_latest: true
+# trigger: 2026-10-23T19:39:37.5303953+08:00
