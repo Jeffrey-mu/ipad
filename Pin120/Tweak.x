@@ -747,6 +747,25 @@ static void P120Watchdog(void)
         gBundleID = [[NSBundle mainBundle] bundleIdentifier];
         gProcName = [[NSProcessInfo processInfo] processName];
 
+        // 加载自检：只要插件进了这个进程，就往该 App 自己的容器里留一个文件。
+        // Filza → <App 容器>/Library/Preferences/pin120.loaded.txt 存在 = 注入成功。
+        @try {
+            NSString *dir  = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"];
+            NSString *path = [dir stringByAppendingPathComponent:@"pin120.loaded.txt"];
+            NSString *info = [NSString stringWithFormat:
+                              @"Pin120 2.4.0 loaded\nbundle=%@\nproc=%@\narch=%@\ntime=%@\n",
+                              gBundleID ?: @"?", gProcName ?: @"?",
+#ifdef __arm64e__
+                              @"arm64e",
+#else
+                              @"arm64",
+#endif
+                              [NSDate date]];
+            [info writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            NSLog(@"[Pin120] loaded marker written to %@", path);
+        } @catch (NSException *e) {
+        }
+
         // 必须在装 hook 之前取真实值
         gRealMaxFPS = [UIScreen mainScreen].maximumFramesPerSecond;
 

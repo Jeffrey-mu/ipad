@@ -1,7 +1,8 @@
 export THEOS_PACKAGE_SCHEME = roothide
 
 TARGET := iphone:clang:latest:15.0
-ARCHS := arm64
+# A12X 是 legacy arm64e：同时产出 arm64 + arm64e，避免加载器按架构跳过
+ARCHS := arm64 arm64e
 
 include $(THEOS)/makefiles/common.mk
 
