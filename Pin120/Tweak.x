@@ -58,6 +58,11 @@ static NSInteger      gUnityFPS    = 0;       // Unity Application.targetFrameRa
 static double         gMeasuredHz  = 0.0;     // 实测 display link 回调频率
 static NSTimeInterval gLastTick    = 0;
 
+static NSHashTable   *gLinks       = nil;     // 所有见过的 CADisplayLink（弱引用）
+static NSTimer       *gWatchdog    = nil;     // 每秒重新压 120 的看门狗
+static NSInteger      gRelockCount = 0;
+static NSTimeInterval gLastHUD     = 0;
+
 static void P120UpdateHUD(void);
 static void P120ShowHUD(void);
 static void P120CycleMode(void);
@@ -185,30 +190,53 @@ static NSString *P120ModeText(void)
     }
 }
 
+static NSString *P120ThermalText(void)
+{
+    switch ([NSProcessInfo processInfo].thermalState) {
+        case NSProcessInfoThermalStateNominal:  return @"正常";
+        case NSProcessInfoThermalStateFair:     return @"偏热";
+        case NSProcessInfoThermalStateSerious:  return @"过热";
+        case NSProcessInfoThermalStateCritical: return @"极热";
+        default:                                return @"?";
+    }
+}
+
 static void P120UpdateHUD(void)
 {
     if (!gHUDLabel) return;
 
+    // 每秒 4 次就够了，别跟着 60/120Hz 的 display link 每帧拼字符串
+    NSTimeInterval now = CACurrentMediaTime();
+    if (now - gLastHUD < 0.25) return;
+    gLastHUD = now;
+
     NSString *modeText = P120ModeText();
     if (!gHUDExpanded) {
         gHUDLabel.text = [NSString stringWithFormat:@"P120 %@", modeText];
-    } else {
-        // 实时读一次：走的是 hook 之后的值，能直接看出 hook 有没有生效
-        NSInteger reported = [UIScreen mainScreen].maximumFramesPerSecond;
-        NSString *engine = gEngineFPS   > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineFPS]   : @"—";
-        NSString *range  = gEngineRange > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineRange] : @"—";
-        NSString *unity  = gUnityFPS != 0 ? [NSString stringWithFormat:@"%ld", (long)gUnityFPS]    : @"—";
-        gHUDLabel.text = [NSString stringWithFormat:
-            @"Pin120 %@ · %@\n"
-            @"上报刷新率 %ld(真%ld) · 实测 %.0fHz\n"
-            @"引擎请求 %@fps(区间%@) · Unity target %@",
-            modeText,
-            gBundleID ?: (gProcName ?: @"?"),
-            (long)reported,
-            (long)gRealMaxFPS,
-            gMeasuredHz,
-            engine, range, unity];
+        return;
     }
+
+    // 实时读一次：走的是 hook 之后的值，能直接看出 hook 有没有生效
+    NSInteger reported = [UIScreen mainScreen].maximumFramesPerSecond;
+    NSString *engine = gEngineFPS   > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineFPS]   : @"—";
+    NSString *range  = gEngineRange > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineRange] : @"—";
+    NSString *unity  = gUnityFPS != 0 ? [NSString stringWithFormat:@"%ld", (long)gUnityFPS]    : @"—";
+    BOOL lowPower = [NSProcessInfo processInfo].isLowPowerModeEnabled;
+
+    gHUDLabel.text = [NSString stringWithFormat:
+        @"Pin120 %@ · %@\n"
+        @"上报 %ld(真%ld) · 实测 %.0fHz · 热:%@%@ 低电:%@\n"
+        @"引擎 %@fps(区间%@) · Unity %@ · 重压 %ld",
+        modeText,
+        gBundleID ?: (gProcName ?: @"?"),
+        (long)reported,
+        (long)gRealMaxFPS,
+        gMeasuredHz,
+        P120ThermalText(),
+        (gMode == P120ModeFull ? @"(已伪装)" : @""),
+        lowPower ? @"开" : @"关",
+        engine, range, unity,
+        (long)gRelockCount];
 }
 
 static void P120CycleMode(void)
@@ -310,6 +338,8 @@ static void P120ShowHUD(void)
 static void P120TuneLink(CADisplayLink *link)
 {
     if (!gActive || gMode == P120ModeOff || !link) return;
+    if (!gLinks) gLinks = [NSHashTable weakObjectsHashTable];
+    [gLinks addObject:link];
     gInternal = YES;
     @try {
         [link setPreferredFrameRateRange:CAFrameRateRangeMake(120.0f, 120.0f, 120.0f)];
@@ -337,6 +367,22 @@ static void P120UnitySetTargetFrameRate(int fr)
     gUnityFPS = fr;
     if (gActive && gMode != P120ModeOff && fr > 0) fr = 120;
     if (gOrigUnitySetTargetFrameRate) gOrigUnitySetTargetFrameRate(fr);
+}
+
+// Unity 的符号可能比插件加载得更晚（UnityFramework.framework 是 App 启动后才加载的），
+// 所以允许反复重试。这里刻意不主动 dlopen，避免打乱 Unity 自己的加载流程。
+static void P120TryHookUnity(void)
+{
+    if (gOrigUnityGetTargetFrameRate && gOrigUnitySetTargetFrameRate) return;
+
+    void *getSym = dlsym(RTLD_DEFAULT, "UnityGetTargetFrameRate");
+    void *setSym = dlsym(RTLD_DEFAULT, "UnitySetTargetFrameRate");
+    if (getSym && !gOrigUnityGetTargetFrameRate) {
+        MSHookFunction(getSym, (void **)&gOrigUnityGetTargetFrameRate, (void *)P120UnityGetTargetFrameRate);
+    }
+    if (setSym && !gOrigUnitySetTargetFrameRate) {
+        MSHookFunction(setSym, (void **)&gOrigUnitySetTargetFrameRate, (void *)P120UnitySetTargetFrameRate);
+    }
 }
 
 #pragma mark - 机型伪装
@@ -376,6 +422,33 @@ static int P120Uname(struct utsname *buf)
     return ret;
 }
 
+#pragma mark - 看门狗
+
+// 每秒把还活着的 display link 重新压回 120。
+// 排除「游戏过一会儿自己把帧率改回去」这种可能：改回去也会立刻被压回来。
+static void P120Watchdog(void)
+{
+    if (!gActive || gMode == P120ModeOff) return;
+
+    NSArray *links = gLinks.allObjects;
+    if (links.count) {
+        for (CADisplayLink *l in links) {
+            @try {
+                gInternal = YES;
+                [l setPreferredFrameRateRange:CAFrameRateRangeMake(120.0f, 120.0f, 120.0f)];
+                [l setPreferredFramesPerSecond:120];
+                gInternal = NO;
+            } @catch (NSException *e) {
+                gInternal = NO;
+            }
+        }
+        gRelockCount++;
+    }
+
+    P120TryHookUnity();
+    P120UpdateHUD();
+}
+
 #pragma mark - Hooks
 
 // 放在 group 里：只有第三方 App 进程才 %init(All)，
@@ -387,6 +460,24 @@ static int P120Uname(struct utsname *buf)
 - (NSInteger)maximumFramesPerSecond
 {
     if (gActive && gMode != P120ModeOff) return 120;
+    return %orig;
+}
+
+%end
+
+// 强力模式下顺手把「过热 / 低电量」也伪装成正常：
+// 有些游戏是看 thermalState 自己降画质/降帧率的，伪装后就降不下去了。
+%hook NSProcessInfo
+
+- (NSProcessInfoThermalState)thermalState
+{
+    if (gActive && gMode == P120ModeFull) return NSProcessInfoThermalStateNominal;
+    return %orig;
+}
+
+- (BOOL)isLowPowerModeEnabled
+{
+    if (gActive && gMode == P120ModeFull) return NO;
     return %orig;
 }
 
@@ -450,18 +541,10 @@ static int P120Uname(struct utsname *buf)
         P120LoadConfig();
         %init(All);
 
-        // Unity 原生帧率接口（球球大作战等 Unity 游戏走这条路）
-        void *getSym = dlsym(RTLD_DEFAULT, "UnityGetTargetFrameRate");
-        void *setSym = dlsym(RTLD_DEFAULT, "UnitySetTargetFrameRate");
-        if (!getSym || !setSym) {
-            void *uf = dlopen("UnityFramework", RTLD_LAZY);
-            if (uf) {
-                if (!getSym) getSym = dlsym(uf, "UnityGetTargetFrameRate");
-                if (!setSym) setSym = dlsym(uf, "UnitySetTargetFrameRate");
-            }
-        }
-        if (getSym) MSHookFunction(getSym, (void **)&gOrigUnityGetTargetFrameRate, (void *)P120UnityGetTargetFrameRate);
-        if (setSym) MSHookFunction(setSym, (void **)&gOrigUnitySetTargetFrameRate, (void *)P120UnitySetTargetFrameRate);
+        // Unity 原生帧率接口（球球大作战等 Unity 游戏走这条路）。
+        // 不主动 dlopen UnityFramework（会打乱它自己的加载流程），
+        // 找不到就交给看门狗每秒重试。
+        P120TryHookUnity();
 
         // 机型伪装（可选）
         MSHookFunction((void *)sysctlbyname, (void **)&gOrigSysctlbyname, (void *)P120Sysctlbyname);
@@ -474,6 +557,12 @@ static int P120Uname(struct utsname *buf)
             [link setPreferredFrameRateRange:CAFrameRateRangeMake(120.0f, 120.0f, 120.0f)];
             gInternal = NO;
             [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+
+            // 看门狗：每秒重新压 120 + 补 hook Unity 符号
+            gWatchdog = [NSTimer timerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
+                P120Watchdog();
+            }];
+            [[NSRunLoop mainRunLoop] addTimer:gWatchdog forMode:NSRunLoopCommonModes];
 
             P120ShowHUD();
             NSLog(@"[Pin120] injected into %@ (%@) mode=%ld realMaxFPS=%ld",

@@ -1,8 +1,8 @@
 Package: com.wjf.pin120
 Name: Pin120
-Version: 2.0.0
+Version: 2.1.0
 Architecture: iphoneos-arm
-Description: Unlocks 120fps in games on 60Hz iPads (Pro 2018/A12X). Spoofs UIScreen.maximumFramesPerSecond, forces CADisplayLink to 120Hz and pins Unity targetFrameRate. HUD in the top-left shows live status.
+Description: Unlocks and keeps 120fps in games on 60Hz iPads (Pro 2018/A12X). Spoofs UIScreen.maximumFramesPerSecond, forces CADisplayLink/Unity targetFrameRate to 120, and re-pins every display link once per second. HUD in the top-left shows live status including thermal state.
 Maintainer: wjf
 Author: wjf
 Section: Tweaks
