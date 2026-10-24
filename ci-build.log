@@ -1,0 +1,86 @@
+[0;36m==> [1;36mNotice:[m Build may be slow as Theos isn’t using all available CPU cores on this computer. Consider upgrading GNU Make: https://theos.dev/docs/parallel-building
+[1;31m> [1;3;39mMaking all for tweak Pin120…[m
+[0;31m==> [1;39mPreprocessing Tweak.x…[m
+[0;32m==> [1;39mCompiling Tweak.x (arm64)…[m
+[1mTweak.x:1:1: [0m[0;1;31merror: [0m[1midentifier contains Unicode character <U+FEFF> that is invisible in some environments [-Werror,-Wunicode-zero-width][0m
+    1 | [7m<U+FEFF>[0m
+      | [0;1;32m^~~~~~~~
+[0m[1mTweak.x:1:1: [0m[0;1;31merror: [0m[1munknown type name '﻿'[0m
+[1mTweak.x:24:1: [0m[0;1;31merror: [0m[1mexpected identifier or '('[0m
+   24 | #import <UIKit/UIKit.h>[0m
+      | [0;1;32m^
+[0m[1mTweak.x:248:101: [0m[0;1;31merror: [0m[1mmissing terminating '"' character [-Werror,-Winvalid-pp-token][0m
+  248 |     NSString *engine = gEngineFPS   > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineFPS]   : @"鈥?;[0m
+      | [0;1;32m                                                                                                    ^
+[0m[1mTweak.x:248:100: [0m[0;1;31merror: [0m[1munexpected '@' in program[0m
+  248 |     NSString *engine = gEngineFPS   > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineFPS]   : @"鈥?;[0m
+      | [0;1;32m                                                                                                   ^
+[0m[1mTweak.x:249:101: [0m[0;1;31merror: [0m[1mmissing terminating '"' character [-Werror,-Winvalid-pp-token][0m
+  249 |     NSString *range  = gEngineRange > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineRange] : @"鈥?;[0m
+      | [0;1;32m                                                                                                    ^
+[0m[1mTweak.x:250:99: [0m[0;1;31merror: [0m[1mmissing terminating '"' character [-Werror,-Winvalid-pp-token][0m
+  250 |     NSString *unity  = gUnityFPS != 0 ? [NSString stringWithFormat:@"%ld", (long)gUnityFPS]    : @"鈥?;[0m
+      | [0;1;32m                                                                                                  ^
+[0m[1mTweak.x:264:9: [0m[0;1;31merror: [0m[1muse of undeclared identifier 'lowPower'[0m
+  264 |         lowPower ? @"寮€" : @"鍏?,[0m
+      | [0;1;32m        ^~~~~~~~
+[0m[1mTweak.x:264:33: [0m[0;1;31merror: [0m[1mmissing terminating '"' character [-Werror,-Winvalid-pp-token][0m
+  264 |         lowPower ? @"寮€" : @"鍏?,[0m
+      | [0;1;32m                             ^
+[0m[1mTweak.x:264:32: [0m[0;1;31merror: [0m[1munexpected '@' in program[0m
+  264 |         lowPower ? @"寮€" : @"鍏?,[0m
+      | [0;1;32m                            ^
+[0m[1mTweak.x:429:62: [0m[0;1;31merror: [0m[1mmissing terminating '"' character [-Werror,-Winvalid-pp-token][0m
+  429 |         gSBLabel.text = online ? [NSString stringWithFormat:@"P120 %ldHz 鉁?, (long)hz][0m
+      | [0;1;32m                                                             ^
+[0m[1mTweak.x:429:61: [0m[0;1;31merror: [0m[1munexpected '@' in program[0m
+  429 |         gSBLabel.text = online ? [NSString stringWithFormat:@"P120 %ldHz 鉁?, (long)hz][0m
+      | [0;1;32m                                                            ^
+[0m[1mTweak.x:430:55: [0m[0;1;31merror: [0m[1mexpected ':'[0m
+  430 |                                : @"P120 鈻?鐐规垜";[0m
+      | [0;1;32m                                                  ^
+[0m      | [0;32m                                                  : 
+[0m[1mTweak.x:429:32: [0m[0;1;36mnote: [0mto match this '?'[0m
+  429 |         gSBLabel.text = online ? [NSString stringWithFormat:@"P120 %ldHz 鉁?, (long)hz][0m
+      | [0;1;32m                               ^
+[0m[1mTweak.x:430:55: [0m[0;1;31merror: [0m[1mexpected expression[0m
+  430 |                                : @"P120 鈻?鐐规垜";[0m
+      | [0;1;32m                                                  ^
+[0m[1mTweak.x:437:12: [0m[0;1;31merror: [0m[1mmissing terminating '"' character [-Werror,-Winvalid-pp-token][0m
+  437 |         : @"娓告垙鏈[7m<U+E043>[0m笂鎶ワ紙娌¤繘娓告垙锛屾垨娉ㄥ叆澶辫触锛?;[0m
+      | [0;1;32m           ^
+[0m[1mTweak.x:437:11: [0m[0;1;31merror: [0m[1munexpected '@' in program[0m
+  437 |         : @"娓告垙鏈[7m<U+E043>[0m笂鎶ワ紙娌¤繘娓告垙锛屾垨娉ㄥ叆澶辫触锛?;[0m
+      | [0;1;32m          ^
+[0m[1mTweak.x:443:77: [0m[0;1;31merror: [0m[1mmissing terminating '"' character [-Werror,-Winvalid-pp-token][0m
+  443 |         gameLine, modeText, P120ThermalName(thermal), lowPwr ? @"寮€" : @"鍏?, (long)relock];[0m
+      | [0;1;32m                                                                         ^
+[0m[1mTweak.x:443:98: [0m[0;1;31merror: [0m[1mexpected ';' at end of declaration[0m
+  443 |         gameLine, modeText, P120ThermalName(thermal), lowPwr ? @"寮€" : @"鍏?, (long)relock];[0m
+      | [0;1;32m                                                                                             ^
+[0m      | [0;32m                                                                                             ;
+[0m[1mTweak.x:633:69: [0m[0;1;31merror: [0m[1muse of undeclared identifier 'P120Uname'; did you mean 'P120UnameFn'?[0m
+  633 |         MSHookFunction((void *)uname, (void **)&gOrigUname, (void *)P120Uname);[0m
+      | [0;1;32m                                                                    ^~~~~~~~~
+[0m[1mTweak.x:622:15: [0m[0;1;36mnote: [0m'P120UnameFn' declared here[0m
+  622 | typedef int (*P120UnameFn)(struct utsname *);[0m
+      | [0;1;32m              ^
+[0m  623 | static P120UnameFn gOrigUname = NULL;[0m
+  624 | [0m
+  625 | [0m
+  626 | static void P120HookSysctlIfNeeded(void)[0m
+  627 | {[0m
+  628 |     if (gMode != P120ModeFull) return;[0m
+  629 |     if (!gOrigSysctlbyname) {[0m
+  630 |         MSHookFunction((void *)sysctlbyname, (void **)&gOrigSysctlbyname, (void *)P120Sysctlbyname);[0m
+  631 |     }[0m
+  632 |     if (!gOrigUname) {[0m
+  633 |         MSHookFunction((void *)uname, (void **)&gOrigUname, (void *)P120Uname);[0m
+      | [0;1;32m                                                                    ~~~~~~~~~
+[0m      | [0;32m                                                                    P120UnameFn
+[0m19 errors generated.
+make[3]: *** [/Users/runner/work/ipad/ipad/Pin120/.theos/obj/arm64/Tweak.x.4985eaaa.o] Error 1
+rm /Users/runner/work/ipad/ipad/Pin120/.theos/obj/arm64/Tweak.x.m
+make[2]: *** [/Users/runner/work/ipad/ipad/Pin120/.theos/obj/arm64/Pin120.dylib] Error 2
+make[1]: *** [internal-library-all_] Error 2
+make: *** [Pin120.all.tweak.variables] Error 2
