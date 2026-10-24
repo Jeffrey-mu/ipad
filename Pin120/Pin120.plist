@@ -3,9 +3,19 @@
 <plist version="1.0">
 <dict>
 	<!--
-		故意不带 Filter：注入到所有进程。
-		刷新率/帧率是「前台 App 自己」向系统申请的，只有进到游戏进程里才能改；
-		Tweak.x 的 %ctor 只会对第三方 App 启用 hook，系统进程完全不碰。
+		2.5.0：改成显式 Filter。
+		之前用「不带 Filter = 注入所有进程」，但 roothide 的加载器可能只认显式列表，
+		结果就是哪儿都没注入（现象完全吻合）。
+		com.juzi.balls = 球球大作战
+		org.coolstar.SileoStore = Sileo（对照组，验证注入链路是否通）
 	-->
+	<key>Filter</key>
+	<dict>
+		<key>Bundles</key>
+		<array>
+			<string>com.juzi.balls</string>
+			<string>org.coolstar.SileoStore</string>
+		</array>
+	</dict>
 </dict>
 </plist>
