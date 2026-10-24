@@ -63,6 +63,7 @@ static NSHashTable   *gLinks       = nil;     // 所有见过的 CADisplayLink�
 static NSTimer       *gWatchdog    = nil;     // 每秒重新压 120 的看门狗
 static NSInteger      gRelockCount = 0;
 static NSTimeInterval gLastHUD     = 0;
+static BOOL           gWantHUD     = NO;      // 默认不画界面，只写日志（排查卡死用）
 
 static void P120UpdateHUD(void);
 static void P120ShowHUD(void);
@@ -90,8 +91,11 @@ static void P120WriteConfig(NSMutableArray *hidden)
 
 static void P120LoadConfig(void)
 {
-    NSNumber *mode = P120ReadConfig()[@"mode"];
+    NSDictionary *cfg = P120ReadConfig();
+    NSNumber *mode = cfg[@"mode"];
     if (mode) gMode = (P120Mode)mode.integerValue;
+    NSNumber *hud = cfg[@"hud"];
+    gWantHUD = hud ? hud.boolValue : NO;   // 默认不画 HUD
 }
 
 static void P120SaveConfig(void)
@@ -639,8 +643,20 @@ static void P120Watchdog(void)
 {
     if (!gActive) return;
 
-    // 每秒给 SpringBoard 的悬浮条发一次状态（即使模式=关闭也发，方便排查）
+    static NSInteger tick = 0;
+    tick++;
+
+    // 心跳日志：日志里能看到这条 = 插件确实进了这个进程
+    if (tick % 3 == 0) {
+        NSLog(@"[Pin120] alive pid=%d mode=%ld hz=%.1f engine=%ld unity=%ld thermal=%ld relock=%ld",
+              getpid(), (long)gMode, gMeasuredHz, (long)gEngineFPS, (long)gUnityFPS,
+              (long)[NSProcessInfo processInfo].thermalState, (long)gRelockCount);
+        P120DumpStatus();
+    }
+
+    // 给 SpringBoard 悬浮条发状态（有就发，没有也不影响）
     P120PostState();
+
     if (gMode == P120ModeOff) return;
 
     NSArray *links = gLinks.allObjects;
@@ -661,12 +677,10 @@ static void P120Watchdog(void)
     P120TryHookUnity();
 
     // 游戏可能重建/替换窗口，把挂件重新挂回当前 key window
-    P120AttachHUD();
-
-    P120UpdateHUD();
-
-    static NSInteger dumpTick = 0;
-    if (++dumpTick % 5 == 0) P120DumpStatus();
+    if (gWantHUD) {
+        P120AttachHUD();
+        P120UpdateHUD();
+    }
 }
 
 #pragma mark - Hooks
@@ -808,13 +822,13 @@ static void P120Watchdog(void)
             gInternal = NO;
             [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 
-            // 看门狗：每秒重新压 120 + 补 hook Unity 符号
+            // 看门狗：每秒重新压 120 + 补 hook Unity 符号 + 心跳日志
             gWatchdog = [NSTimer timerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
                 P120Watchdog();
             }];
             [[NSRunLoop mainRunLoop] addTimer:gWatchdog forMode:NSRunLoopCommonModes];
 
-            P120ShowHUD();
+            if (gWantHUD) P120ShowHUD();
             NSLog(@"[Pin120] injected into %@ (%@) mode=%ld realMaxFPS=%ld",
                   gBundleID ?: @"no-bundle", gProcName ?: @"?", (long)gMode, (long)gRealMaxFPS);
         });
