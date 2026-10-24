@@ -1,25 +1,25 @@
-// Pin120 2.2 — 让 iPad Pro (2018 / A12X) 的 ProMotion 稳定停在 120Hz
+﻿// Pin120 2.2 鈥?璁?iPad Pro (2018 / A12X) 鐨?ProMotion 绋冲畾鍋滃湪 120Hz
 //
-// 旧版为什么完全没用：
-//   v1 的 Filter 只有 SpringBoard / backboardd，游戏进程根本没被注入；
-//   而渲染刷新率是「前台 App 自己」向系统申请的，跟 SpringBoard 无关。
-//   （ReplayKit 广播同样管不到别的 App 的帧率，所以 Pin120App 那条路走不通。）
+// 鏃х増涓轰粈涔堝畬鍏ㄦ病鐢細
+//   v1 鐨?Filter 鍙湁 SpringBoard / backboardd锛屾父鎴忚繘绋嬫牴鏈病琚敞鍏ワ紱
+//   鑰屾覆鏌撳埛鏂扮巼鏄€屽墠鍙?App 鑷繁銆嶅悜绯荤粺鐢宠鐨勶紝璺?SpringBoard 鏃犲叧銆?
+//   锛圧eplayKit 骞挎挱鍚屾牱绠′笉鍒板埆鐨?App 鐨勫抚鐜囷紝鎵€浠?Pin120App 閭ｆ潯璺蛋涓嶉€氥€傦級
 //
-// 这台机器本身是 ProMotion 120Hz 屏，但 iOS 会自适应在 120 / 80 / 60 之间跳。
-// 全部在「游戏进程内」完成，改写游戏决定帧率的三个点，并每秒重压一次：
-//   1) UIScreen.maximumFramesPerSecond  →  恒为 120
-//      游戏判断「这台设备支不支持 120 帧」用的就是它。
-//   2) CADisplayLink.preferredFramesPerSecond / preferredFrameRateRange  →  强制 120
-//      引擎(Unity/Unreal)用它决定渲染节奏，游戏里往往写死 60/80。
-//   3) Unity 原生 Application.targetFrameRate (UnityGet/SetTargetFrameRate)  →  强制 120
-//      绕开游戏自己设置的帧率上限。
-//   4) 可选：伪装 hw.machine 为 M1 iPad Pro + 伪装 thermalState / 低电量
-//      有些游戏是按机型白名单或温度状态自己降画质/降帧率的。
+// 杩欏彴鏈哄櫒鏈韩鏄?ProMotion 120Hz 灞忥紝浣?iOS 浼氳嚜閫傚簲鍦?120 / 80 / 60 涔嬮棿璺炽€?
+// 鍏ㄩ儴鍦ㄣ€屾父鎴忚繘绋嬪唴銆嶅畬鎴愶紝鏀瑰啓娓告垙鍐冲畾甯х巼鐨勪笁涓偣锛屽苟姣忕閲嶅帇涓€娆★細
+//   1) UIScreen.maximumFramesPerSecond  鈫? 鎭掍负 120
+//      娓告垙鍒ゆ柇銆岃繖鍙拌澶囨敮涓嶆敮鎸?120 甯с€嶇敤鐨勫氨鏄畠銆?
+//   2) CADisplayLink.preferredFramesPerSecond / preferredFrameRateRange  鈫? 寮哄埗 120
+//      寮曟搸(Unity/Unreal)鐢ㄥ畠鍐冲畾娓叉煋鑺傚锛屾父鎴忛噷寰€寰€鍐欐 60/80銆?
+//   3) Unity 鍘熺敓 Application.targetFrameRate (UnityGet/SetTargetFrameRate)  鈫? 寮哄埗 120
+//      缁曞紑娓告垙鑷繁璁剧疆鐨勫抚鐜囦笂闄愩€?
+//   4) 鍙€夛細浼 hw.machine 涓?M1 iPad Pro + 浼 thermalState / 浣庣數閲?
+//      鏈変簺娓告垙鏄寜鏈哄瀷鐧藉悕鍗曟垨娓╁害鐘舵€佽嚜宸遍檷鐢昏川/闄嶅抚鐜囩殑銆?
 //
-// 注入范围：plist 不带 Filter → 所有进程都加载；%ctor 里只对第三方 App 生效，
-// 系统进程(SpringBoard/UIKit/守护进程)不受任何影响。
+// 娉ㄥ叆鑼冨洿锛歱list 涓嶅甫 Filter 鈫?鎵€鏈夎繘绋嬮兘鍔犺浇锛?ctor 閲屽彧瀵圭涓夋柟 App 鐢熸晥锛?
+// 绯荤粺杩涚▼(SpringBoard/UIKit/瀹堟姢杩涚▼)涓嶅彈浠讳綍褰卞搷銆?
 //
-// HUD：左上角小挂件。单击展开/收起详情，长按「收起状态」= 本 App 不再显示。
+// HUD锛氬乏涓婅灏忔寕浠躲€傚崟鍑诲睍寮€/鏀惰捣璇︽儏锛岄暱鎸夈€屾敹璧风姸鎬併€? 鏈?App 涓嶅啀鏄剧ず銆?
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
@@ -34,36 +34,36 @@
 #import <sys/sysctl.h>
 #import <sys/utsname.h>
 
-#pragma mark - 常量 / 类型
+#pragma mark - 甯搁噺 / 绫诲瀷
 
 static NSString *const kP120ConfigPath = @"/var/mobile/Library/Preferences/com.wjf.pin120.plist";
-static NSString *const kP120FakeModel  = @"iPad13,4";   // iPad Pro 11" (M1)，带 ProMotion 120Hz
+static NSString *const kP120FakeModel  = @"iPad13,4";   // iPad Pro 11" (M1)锛屽甫 ProMotion 120Hz
 
 typedef NS_ENUM(NSInteger, P120Mode) {
-    P120ModeOff      = 0,   // 完全不改写
-    P120ModeStandard = 1,   // 伪造刷新率 + 强制 display link + Unity 120
-    P120ModeFull     = 2,   // 再叠加机型伪装
+    P120ModeOff      = 0,   // 瀹屽叏涓嶆敼鍐?
+    P120ModeStandard = 1,   // 浼€犲埛鏂扮巼 + 寮哄埗 display link + Unity 120
+    P120ModeFull     = 2,   // 鍐嶅彔鍔犳満鍨嬩吉瑁?
 };
 
-#pragma mark - 全局状态
+#pragma mark - 鍏ㄥ眬鐘舵€?
 
 static P120Mode       gMode        = P120ModeStandard;
-static BOOL           gActive      = NO;      // 当前进程是否启用
-static BOOL           gInternal    = NO;      // 我们自己调用 setter 时置位，避免污染统计
+static BOOL           gActive      = NO;      // 褰撳墠杩涚▼鏄惁鍚敤
+static BOOL           gInternal    = NO;      // 鎴戜滑鑷繁璋冪敤 setter 鏃剁疆浣嶏紝閬垮厤姹℃煋缁熻
 static NSString      *gBundleID    = nil;
 static NSString      *gProcName    = nil;
-static NSInteger      gRealMaxFPS  = 0;       // 真实的 UIScreen.maximumFramesPerSecond
-static NSInteger      gEngineFPS   = 0;       // 引擎请求的 preferredFramesPerSecond（原值）
-static NSInteger      gEngineRange = 0;       // 引擎请求的帧率区间上限（原值）
-static NSInteger      gUnityFPS    = 0;       // Unity Application.targetFrameRate（原值）
-static double         gMeasuredHz  = 0.0;     // 实测 display link 回调频率
+static NSInteger      gRealMaxFPS  = 0;       // 鐪熷疄鐨?UIScreen.maximumFramesPerSecond
+static NSInteger      gEngineFPS   = 0;       // 寮曟搸璇锋眰鐨?preferredFramesPerSecond锛堝師鍊硷級
+static NSInteger      gEngineRange = 0;       // 寮曟搸璇锋眰鐨勫抚鐜囧尯闂翠笂闄愶紙鍘熷€硷級
+static NSInteger      gUnityFPS    = 0;       // Unity Application.targetFrameRate锛堝師鍊硷級
+static double         gMeasuredHz  = 0.0;     // 瀹炴祴 display link 鍥炶皟棰戠巼
 static NSTimeInterval gLastTick    = 0;
 
-static NSHashTable   *gLinks       = nil;     // 所有见过的 CADisplayLink（弱引用）
-static NSTimer       *gWatchdog    = nil;     // 每秒重新压 120 的看门狗
+static NSHashTable   *gLinks       = nil;     // 鎵€鏈夎杩囩殑 CADisplayLink锛堝急寮曠敤锛?
+static NSTimer       *gWatchdog    = nil;     // 姣忕閲嶆柊鍘?120 鐨勭湅闂ㄧ嫍
 static NSInteger      gRelockCount = 0;
 static NSTimeInterval gLastHUD     = 0;
-static BOOL           gWantHUD     = NO;      // 默认不画界面，只写日志（排查卡死用）
+static BOOL           gWantHUD     = NO;      // 榛樿涓嶇敾鐣岄潰锛屽彧鍐欐棩蹇楋紙鎺掓煡鍗℃鐢級
 
 static void P120UpdateHUD(void);
 static void P120ShowHUD(void);
@@ -72,7 +72,7 @@ static void P120ToggleHUD(void);
 static void P120SBStart(void);
 static void P120SBToggle(void);
 
-#pragma mark - 配置读写
+#pragma mark - 閰嶇疆璇诲啓
 
 static NSDictionary *P120ReadConfig(void)
 {
@@ -95,7 +95,7 @@ static void P120LoadConfig(void)
     NSNumber *mode = cfg[@"mode"];
     if (mode) gMode = (P120Mode)mode.integerValue;
     NSNumber *hud = cfg[@"hud"];
-    gWantHUD = hud ? hud.boolValue : NO;   // 默认不画 HUD
+    gWantHUD = hud ? hud.boolValue : NO;   // 榛樿涓嶇敾 HUD
 }
 
 static void P120SaveConfig(void)
@@ -122,7 +122,7 @@ static void P120HideCurrentApp(void)
     P120WriteConfig(hidden);
 }
 
-#pragma mark - HUD 交互
+#pragma mark - HUD 浜や簰
 
 @interface P120HUD : NSObject
 + (instancetype)shared;
@@ -134,7 +134,7 @@ static void P120HideCurrentApp(void)
 
 static UIView   *gHUDBox    = nil;
 static UILabel  *gHUDLabel  = nil;
-static BOOL      gHUDExpanded = YES;   // 启动先展开几秒，方便找到
+static BOOL      gHUDExpanded = YES;   // 鍚姩鍏堝睍寮€鍑犵锛屾柟渚挎壘鍒?
 static BOOL      gHUDUserTouched = NO;
 static BOOL      gHUDDismissed = NO;
 static NSArray  *gHUDConstraints = nil;
@@ -152,7 +152,7 @@ static NSArray  *gHUDConstraints = nil;
 - (void)handleTap:(UITapGestureRecognizer *)sender
 {
     gHUDUserTouched = YES;
-    // 收起状态：单击展开详情；展开状态：单击切换模式（关 / 标准 / 标准+机型伪装）
+    // 鏀惰捣鐘舵€侊細鍗曞嚮灞曞紑璇︽儏锛涘睍寮€鐘舵€侊細鍗曞嚮鍒囨崲妯″紡锛堝叧 / 鏍囧噯 / 鏍囧噯+鏈哄瀷浼锛?
     if (gHUDExpanded) P120CycleMode();
     else              P120ToggleHUD();
 }
@@ -162,9 +162,9 @@ static NSArray  *gHUDConstraints = nil;
     if (sender.state != UIGestureRecognizerStateBegan) return;
     gHUDUserTouched = YES;
     if (gHUDExpanded) {
-        P120ToggleHUD();          // 展开状态下长按 = 收起详情
+        P120ToggleHUD();          // 灞曞紑鐘舵€佷笅闀挎寜 = 鏀惰捣璇︽儏
     } else {
-        P120HideCurrentApp();     // 收起状态下长按 = 本 App 不再显示
+        P120HideCurrentApp();     // 鏀惰捣鐘舵€佷笅闀挎寜 = 鏈?App 涓嶅啀鏄剧ず
         gHUDDismissed = YES;
         gHUDBox.hidden = YES;
         [gHUDBox removeFromSuperview];
@@ -186,7 +186,7 @@ static NSArray  *gHUDConstraints = nil;
 }
 
 @end
-#pragma mark - HUD 绘制
+#pragma mark - HUD 缁樺埗
 
 @interface P120Meter : NSObject
 - (void)tick:(CADisplayLink *)link;
@@ -211,19 +211,19 @@ static NSArray  *gHUDConstraints = nil;
 static NSString *P120ModeText(void)
 {
     switch (gMode) {
-        case P120ModeOff:  return @"关闭";
-        case P120ModeFull: return @"标准+机型伪装";
-        default:           return @"标准";
+        case P120ModeOff:  return @"鍏抽棴";
+        case P120ModeFull: return @"鏍囧噯+鏈哄瀷浼";
+        default:           return @"鏍囧噯";
     }
 }
 
 static NSString *P120ThermalText(void)
 {
     switch ([NSProcessInfo processInfo].thermalState) {
-        case NSProcessInfoThermalStateNominal:  return @"正常";
-        case NSProcessInfoThermalStateFair:     return @"偏热";
-        case NSProcessInfoThermalStateSerious:  return @"过热";
-        case NSProcessInfoThermalStateCritical: return @"极热";
+        case NSProcessInfoThermalStateNominal:  return @"姝ｅ父";
+        case NSProcessInfoThermalStateFair:     return @"鍋忕儹";
+        case NSProcessInfoThermalStateSerious:  return @"杩囩儹";
+        case NSProcessInfoThermalStateCritical: return @"鏋佺儹";
         default:                                return @"?";
     }
 }
@@ -232,7 +232,7 @@ static void P120UpdateHUD(void)
 {
     if (!gHUDLabel) return;
 
-    // 每秒 4 次就够了，别跟着 60/120Hz 的 display link 每帧拼字符串
+    // 姣忕 4 娆″氨澶熶簡锛屽埆璺熺潃 60/120Hz 鐨?display link 姣忓抚鎷煎瓧绗︿覆
     NSTimeInterval now = CACurrentMediaTime();
     if (now - gLastHUD < 0.25) return;
     gLastHUD = now;
@@ -243,25 +243,25 @@ static void P120UpdateHUD(void)
         return;
     }
 
-    // 实时读一次：走的是 hook 之后的值，能直接看出 hook 有没有生效
+    // 瀹炴椂璇讳竴娆★細璧扮殑鏄?hook 涔嬪悗鐨勫€硷紝鑳界洿鎺ョ湅鍑?hook 鏈夋病鏈夌敓鏁?
     NSInteger reported = [UIScreen mainScreen].maximumFramesPerSecond;
-    NSString *engine = gEngineFPS   > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineFPS]   : @"—";
-    NSString *range  = gEngineRange > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineRange] : @"—";
-    NSString *unity  = gUnityFPS != 0 ? [NSString stringWithFormat:@"%ld", (long)gUnityFPS]    : @"—";
+    NSString *engine = gEngineFPS   > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineFPS]   : @"鈥?;
+    NSString *range  = gEngineRange > 0 ? [NSString stringWithFormat:@"%ld", (long)gEngineRange] : @"鈥?;
+    NSString *unity  = gUnityFPS != 0 ? [NSString stringWithFormat:@"%ld", (long)gUnityFPS]    : @"鈥?;
     BOOL lowPower = [NSProcessInfo processInfo].isLowPowerModeEnabled;
 
     gHUDLabel.text = [NSString stringWithFormat:
-        @"Pin120 %@ · %@\n"
-        @"上报 %ld(真%ld) · 实测 %.0fHz · 热:%@%@ 低电:%@\n"
-        @"引擎 %@fps(区间%@) · Unity %@ · 重压 %ld",
+        @"Pin120 %@ 路 %@\n"
+        @"涓婃姤 %ld(鐪?ld) 路 瀹炴祴 %.0fHz 路 鐑?%@%@ 浣庣數:%@\n"
+        @"寮曟搸 %@fps(鍖洪棿%@) 路 Unity %@ 路 閲嶅帇 %ld",
         modeText,
         gBundleID ?: (gProcName ?: @"?"),
         (long)reported,
         (long)gRealMaxFPS,
         gMeasuredHz,
         P120ThermalText(),
-        (gMode == P120ModeFull ? @"(已伪装)" : @""),
-        lowPower ? @"开" : @"关",
+        (gMode == P120ModeFull ? @"(宸蹭吉瑁?" : @""),
+        lowPower ? @"寮€" : @"鍏?,
         engine, range, unity,
         (long)gRelockCount];
 }
@@ -277,12 +277,12 @@ static void P120ToggleHUD(void)
 {
     if (!gHUDBox) return;
     gHUDExpanded = !gHUDExpanded;
-    gLastHUD = 0;              // 跳过节流，立刻刷新
+    gLastHUD = 0;              // 璺宠繃鑺傛祦锛岀珛鍒诲埛鏂?
     P120UpdateHUD();
 }
 
-// 直接挂到 App 自己的 key window 上。
-// 比单独建一个 UIWindow 稳得多：不管游戏走不走 UIScene、启动多慢，都能显示。
+// 鐩存帴鎸傚埌 App 鑷繁鐨?key window 涓娿€?
+// 姣斿崟鐙缓涓€涓?UIWindow 绋冲緱澶氾細涓嶇娓告垙璧颁笉璧?UIScene銆佸惎鍔ㄥ鎱紝閮借兘鏄剧ず銆?
 static UIWindow *P120KeyWindow(void)
 {
     UIWindow *fallback = nil;
@@ -356,7 +356,7 @@ static void P120ShowHUD(void)
         press.minimumPressDuration = 0.45;
         [gHUDBox addGestureRecognizer:press];
 
-        // 启动先展开 5 秒，方便一眼看到；用户碰过就不再自动收起
+        // 鍚姩鍏堝睍寮€ 5 绉掞紝鏂逛究涓€鐪肩湅鍒帮紱鐢ㄦ埛纰拌繃灏变笉鍐嶈嚜鍔ㄦ敹璧?
         gHUDExpanded = YES;
         gLastHUD = 0;
         P120UpdateHUD();
@@ -371,10 +371,10 @@ static void P120ShowHUD(void)
     P120AttachHUD();
 }
 
-#pragma mark - SpringBoard 悬浮条（铁证：插件到底有没有被加载）
+#pragma mark - SpringBoard 鎮诞鏉★紙閾佽瘉锛氭彃浠跺埌搴曟湁娌℃湁琚姞杞斤級
 
-// 插件只要被加载，桌面上就会出现这个条子。它顺便显示游戏进程上报的状态。
-// 游戏进程 → SpringBoard 用 Darwin notify 传（沙盒之间唯一可靠的通道）。
+// 鎻掍欢鍙琚姞杞斤紝妗岄潰涓婂氨浼氬嚭鐜拌繖涓潯瀛愩€傚畠椤轰究鏄剧ず娓告垙杩涚▼涓婃姤鐨勭姸鎬併€?
+// 娓告垙杩涚▼ 鈫?SpringBoard 鐢?Darwin notify 浼狅紙娌欑洅涔嬮棿鍞竴鍙潬鐨勯€氶亾锛夈€?
 #define kP120StateNotify "com.wjf.pin120.state"
 
 static UIWindow *gSBWindow = nil;
@@ -389,10 +389,10 @@ static NSTimer  *gSBTimer = nil;
 static NSString *P120ThermalName(NSInteger t)
 {
     switch (t) {
-        case 0:  return @"正常";
-        case 1:  return @"偏热";
-        case 2:  return @"过热";
-        case 3:  return @"极热";
+        case 0:  return @"姝ｅ父";
+        case 1:  return @"鍋忕儹";
+        case 2:  return @"杩囩儹";
+        case 3:  return @"鏋佺儹";
     }
     return @"?";
 }
@@ -426,21 +426,21 @@ static void P120SBRefresh(void)
                   ([NSDate timeIntervalSinceReferenceDate] - gRemoteStamp < 6.0);
 
     if (!gSBExpanded) {
-        gSBLabel.text = online ? [NSString stringWithFormat:@"P120 %ldHz ✓", (long)hz]
-                               : @"P120 ▸ 点我";
+        gSBLabel.text = online ? [NSString stringWithFormat:@"P120 %ldHz 鉁?, (long)hz]
+                               : @"P120 鈻?鐐规垜";
         return;
     }
 
-    NSString *modeText = (mode == 0) ? @"关闭" : ((mode == 2) ? @"标准+机型伪装" : @"标准");
+    NSString *modeText = (mode == 0) ? @"鍏抽棴" : ((mode == 2) ? @"鏍囧噯+鏈哄瀷浼" : @"鏍囧噯");
     NSString *gameLine = online
-        ? [NSString stringWithFormat:@"游戏在线 · 屏幕 %ldHz · 引擎 %ld · Unity %ld", (long)hz, (long)engine, (long)unity]
-        : @"游戏未上报（没进游戏，或注入失败）";
+        ? [NSString stringWithFormat:@"娓告垙鍦ㄧ嚎 路 灞忓箷 %ldHz 路 寮曟搸 %ld 路 Unity %ld", (long)hz, (long)engine, (long)unity]
+        : @"娓告垙鏈笂鎶ワ紙娌¤繘娓告垙锛屾垨娉ㄥ叆澶辫触锛?;
 
     gSBLabel.text = [NSString stringWithFormat:
-        @"Pin120 2.3 · SpringBoard 已注入 ✓\n"
+        @"Pin120 2.3 路 SpringBoard 宸叉敞鍏?鉁揬n"
         @"%@\n"
-        @"模式 %@ · 热:%@ 低电:%@ · 重压 %ld",
-        gameLine, modeText, P120ThermalName(thermal), lowPwr ? @"开" : @"关", (long)relock];
+        @"妯″紡 %@ 路 鐑?%@ 浣庣數:%@ 路 閲嶅帇 %ld",
+        gameLine, modeText, P120ThermalName(thermal), lowPwr ? @"寮€" : @"鍏?, (long)relock];
 }
 
 static void P120SBToggle(void)
@@ -482,7 +482,7 @@ static void P120SBStart(void)
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:hud action:@selector(sbPan:)];
     [gSBBox addGestureRecognizer:pan];
 
-    // 游戏进程上报的状态（Darwin notify，跨沙盒）
+    // 娓告垙杩涚▼涓婃姤鐨勭姸鎬侊紙Darwin notify锛岃法娌欑洅锛?
     notify_register_dispatch(kP120StateNotify, &gSBToken, dispatch_get_main_queue(), ^(int token) {
         uint64_t v = 0;
         if (notify_get_state(token, &v) == NOTIFY_STATUS_OK) {
@@ -501,10 +501,10 @@ static void P120SBStart(void)
 
     P120SBRefresh();
     P120SBLayout();
-    [gSBWindow makeKeyAndVisible];   // BallKey 同款做法，SpringBoard 里最稳
+    [gSBWindow makeKeyAndVisible];   // BallKey 鍚屾鍋氭硶锛孲pringBoard 閲屾渶绋?
 }
 
-#pragma mark - 状态上报（给 SpringBoard 挂件看）
+#pragma mark - 鐘舵€佷笂鎶ワ紙缁?SpringBoard 鎸備欢鐪嬶級
 
 static int gPostToken = 0;
 
@@ -536,7 +536,7 @@ static void P120PostState(void)
     notify_post(kP120StateNotify);
 }
 
-// 顺便在 App 自己的容器里留一份，用 Filza 就能看
+// 椤轰究鍦?App 鑷繁鐨勫鍣ㄩ噷鐣欎竴浠斤紝鐢?Filza 灏辫兘鐪?
 static void P120DumpStatus(void)
 {
     NSString *text = gHUDLabel.text;
@@ -546,7 +546,7 @@ static void P120DumpStatus(void)
     [text writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
-#pragma mark - 工具
+#pragma mark - 宸ュ叿
 
 static void P120TuneLink(CADisplayLink *link)
 {
@@ -562,7 +562,7 @@ static void P120TuneLink(CADisplayLink *link)
     gInternal = NO;
 }
 
-#pragma mark - Unity 原生帧率接口
+#pragma mark - Unity 鍘熺敓甯х巼鎺ュ彛
 
 static int  (*gOrigUnityGetTargetFrameRate)(void) = NULL;
 static void (*gOrigUnitySetTargetFrameRate)(int) = NULL;
@@ -582,8 +582,8 @@ static void P120UnitySetTargetFrameRate(int fr)
     if (gOrigUnitySetTargetFrameRate) gOrigUnitySetTargetFrameRate(fr);
 }
 
-// Unity 的符号可能比插件加载得更晚（UnityFramework.framework 是 App 启动后才加载的），
-// 所以允许反复重试。这里刻意不主动 dlopen，避免打乱 Unity 自己的加载流程。
+// Unity 鐨勭鍙峰彲鑳芥瘮鎻掍欢鍔犺浇寰楁洿鏅氾紙UnityFramework.framework 鏄?App 鍚姩鍚庢墠鍔犺浇鐨勶級锛?
+// 鎵€浠ュ厑璁稿弽澶嶉噸璇曘€傝繖閲屽埢鎰忎笉涓诲姩 dlopen锛岄伩鍏嶆墦涔?Unity 鑷繁鐨勫姞杞芥祦绋嬨€?
 static void P120TryHookUnity(void)
 {
     if (gOrigUnityGetTargetFrameRate && gOrigUnitySetTargetFrameRate) return;
@@ -598,7 +598,7 @@ static void P120TryHookUnity(void)
     }
 }
 
-#pragma mark - 机型伪装
+#pragma mark - 鏈哄瀷浼
 
 typedef int (*P120SysctlbynameFn)(const char *, void *, size_t *, void *, size_t);
 static P120SysctlbynameFn gOrigSysctlbyname = NULL;
@@ -618,9 +618,21 @@ static int P120Sysctlbyname(const char *name, void *oldp, size_t *oldlenp, void 
     return gOrigSysctlbyname ? gOrigSysctlbyname(name, oldp, oldlenp, newp, newlen) : -1;
 }
 
-// 有些游戏用 uname() 而不是 sysctlbyname 拿机型，一并处理
+// 鏈変簺娓告垙鐢?uname() 鑰屼笉鏄?sysctlbyname 鎷挎満鍨嬶紝涓€骞跺鐞?
 typedef int (*P120UnameFn)(struct utsname *);
 static P120UnameFn gOrigUname = NULL;
+
+// 鍙湪銆屾爣鍑?鏈哄瀷浼銆嶆ā寮忎笅鎵嶈杩欎袱涓?hook锛屽噺灏戦粯璁よ矾寰勭殑椋庨櫓
+static void P120HookSysctlIfNeeded(void)
+{
+    if (gMode != P120ModeFull) return;
+    if (!gOrigSysctlbyname) {
+        MSHookFunction((void *)sysctlbyname, (void **)&gOrigSysctlbyname, (void *)P120Sysctlbyname);
+    }
+    if (!gOrigUname) {
+        MSHookFunction((void *)uname, (void **)&gOrigUname, (void *)P120Uname);
+    }
+}
 
 static int P120Uname(struct utsname *buf)
 {
@@ -635,10 +647,10 @@ static int P120Uname(struct utsname *buf)
     return ret;
 }
 
-#pragma mark - 看门狗
+#pragma mark - 鐪嬮棬鐙?
 
-// 每秒把还活着的 display link 重新压回 120。
-// 排除「游戏过一会儿自己把帧率改回去」这种可能：改回去也会立刻被压回来。
+// 姣忕鎶婅繕娲荤潃鐨?display link 閲嶆柊鍘嬪洖 120銆?
+// 鎺掗櫎銆屾父鎴忚繃涓€浼氬効鑷繁鎶婂抚鐜囨敼鍥炲幓銆嶈繖绉嶅彲鑳斤細鏀瑰洖鍘讳篃浼氱珛鍒昏鍘嬪洖鏉ャ€?
 static void P120Watchdog(void)
 {
     if (!gActive) return;
@@ -646,7 +658,7 @@ static void P120Watchdog(void)
     static NSInteger tick = 0;
     tick++;
 
-    // 心跳日志：日志里能看到这条 = 插件确实进了这个进程
+    // 蹇冭烦鏃ュ織锛氭棩蹇楅噷鑳界湅鍒拌繖鏉?= 鎻掍欢纭疄杩涗簡杩欎釜杩涚▼
     if (tick % 3 == 0) {
         NSLog(@"[Pin120] alive pid=%d mode=%ld hz=%.1f engine=%ld unity=%ld thermal=%ld relock=%ld",
               getpid(), (long)gMode, gMeasuredHz, (long)gEngineFPS, (long)gUnityFPS,
@@ -654,7 +666,7 @@ static void P120Watchdog(void)
         P120DumpStatus();
     }
 
-    // 给 SpringBoard 悬浮条发状态（有就发，没有也不影响）
+    // 缁?SpringBoard 鎮诞鏉″彂鐘舵€侊紙鏈夊氨鍙戯紝娌℃湁涔熶笉褰卞搷锛?
     P120PostState();
 
     if (gMode == P120ModeOff) return;
@@ -675,8 +687,9 @@ static void P120Watchdog(void)
     }
 
     P120TryHookUnity();
+    P120HookSysctlIfNeeded();
 
-    // 游戏可能重建/替换窗口，把挂件重新挂回当前 key window
+    // 娓告垙鍙兘閲嶅缓/鏇挎崲绐楀彛锛屾妸鎸備欢閲嶆柊鎸傚洖褰撳墠 key window
     if (gWantHUD) {
         P120AttachHUD();
         P120UpdateHUD();
@@ -685,8 +698,8 @@ static void P120Watchdog(void)
 
 #pragma mark - Hooks
 
-// 放在 group 里：只有第三方 App 进程才 %init(All)，
-// 系统进程(SpringBoard/UIKit/守护进程)连 hook 都不会装，零开销零风险。
+// 鏀惧湪 group 閲岋細鍙湁绗笁鏂?App 杩涚▼鎵?%init(All)锛?
+// 绯荤粺杩涚▼(SpringBoard/UIKit/瀹堟姢杩涚▼)杩?hook 閮戒笉浼氳锛岄浂寮€閿€闆堕闄┿€?
 %group All
 
 %hook UIScreen
@@ -699,8 +712,8 @@ static void P120Watchdog(void)
 
 %end
 
-// 强力模式下顺手把「过热 / 低电量」也伪装成正常：
-// 有些游戏是看 thermalState 自己降画质/降帧率的，伪装后就降不下去了。
+// 寮哄姏妯″紡涓嬮『鎵嬫妸銆岃繃鐑?/ 浣庣數閲忋€嶄篃浼鎴愭甯革細
+// 鏈変簺娓告垙鏄湅 thermalState 鑷繁闄嶇敾璐?闄嶅抚鐜囩殑锛屼吉瑁呭悗灏遍檷涓嶄笅鍘讳簡銆?
 %hook NSProcessInfo
 
 - (NSProcessInfoThermalState)thermalState
@@ -753,7 +766,7 @@ static void P120Watchdog(void)
 
 %end
 
-#pragma mark - 启动
+#pragma mark - 鍚姩
 
 %ctor
 {
@@ -761,13 +774,13 @@ static void P120Watchdog(void)
         gBundleID = [[NSBundle mainBundle] bundleIdentifier];
         gProcName = [[NSProcessInfo processInfo] processName];
 
-        // 加载自检：只要插件进了这个进程，就往该 App 自己的容器里留一个文件。
-        // Filza → <App 容器>/Library/Preferences/pin120.loaded.txt 存在 = 注入成功。
+        // 鍔犺浇鑷锛氬彧瑕佹彃浠惰繘浜嗚繖涓繘绋嬶紝灏卞線璇?App 鑷繁鐨勫鍣ㄩ噷鐣欎竴涓枃浠躲€?
+        // Filza 鈫?<App 瀹瑰櫒>/Library/Preferences/pin120.loaded.txt 瀛樺湪 = 娉ㄥ叆鎴愬姛銆?
         @try {
             NSString *dir  = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences"];
             NSString *path = [dir stringByAppendingPathComponent:@"pin120.loaded.txt"];
             NSString *info = [NSString stringWithFormat:
-                              @"Pin120 2.4.0 loaded\nbundle=%@\nproc=%@\narch=%@\ntime=%@\n",
+                              @"Pin120 2.7.0 loaded\nbundle=%@\nproc=%@\narch=%@\ntime=%@\n",
                               gBundleID ?: @"?", gProcName ?: @"?",
 #ifdef __arm64e__
                               @"arm64e",
@@ -780,41 +793,28 @@ static void P120Watchdog(void)
         } @catch (NSException *e) {
         }
 
-        // 必须在装 hook 之前取真实值
-        gRealMaxFPS = [UIScreen mainScreen].maximumFramesPerSecond;
-
-        // SpringBoard：只负责桌面悬浮条（证明插件被加载 + 显示游戏上报的状态），
-        // 不碰任何帧率逻辑。
-        if ([gBundleID isEqualToString:@"com.apple.springboard"] ||
-            [gProcName isEqualToString:@"SpringBoard"]) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                P120SBStart();
-                NSLog(@"[Pin120] SpringBoard chip started (2.3)");
-            });
-            return;
-        }
-
+        // 鍙仛绾?C 鐨勪簨锛氫笉纰?UIKit锛圼UIScreen mainScreen] 鍦?dylib 鏋勯€犳湡浼氭閿侊紝
+        // 杩欏氨鏄?2.5 鎶?Sileo / 娓告垙鍗℃鐨勫師鍥狅級銆傜湡瀹炲埛鏂扮巼绛夎繘涓婚槦鍒楀悗鍐嶈銆?
         BOOL isApple = [gBundleID hasPrefix:@"com.apple."];
         BOOL hasUI   = (NSClassFromString(@"UIApplication") != nil);
         if (getenv("PIN120_ALL")) isApple = NO;
 
-        // 系统进程 / 无 UI 的守护进程：完全不碰
+        // 绯荤粺杩涚▼ / 鏃?UI 鐨勫畧鎶よ繘绋嬶細瀹屽叏涓嶇
         if (isApple || !hasUI) return;
 
         gActive = YES;
         P120LoadConfig();
         %init(All);
 
-        // Unity 原生帧率接口（球球大作战等 Unity 游戏走这条路）。
-        // 不主动 dlopen UnityFramework（会打乱它自己的加载流程），
-        // 找不到就交给看门狗每秒重试。
+        // Unity 鍘熺敓甯х巼鎺ュ彛锛堢悆鐞冨ぇ浣滄垬绛?Unity 娓告垙璧拌繖鏉¤矾锛夈€?
+        // 涓嶄富鍔?dlopen UnityFramework锛堜細鎵撲贡瀹冭嚜宸辩殑鍔犺浇娴佺▼锛夛紝
+        // 鎵句笉鍒板氨浜ょ粰鐪嬮棬鐙楁瘡绉掗噸璇曘€?
         P120TryHookUnity();
 
-        // 机型伪装（可选）
-        MSHookFunction((void *)sysctlbyname, (void **)&gOrigSysctlbyname, (void *)P120Sysctlbyname);
-        MSHookFunction((void *)uname, (void **)&gOrigUname, (void *)P120Uname);
-
         dispatch_async(dispatch_get_main_queue(), ^{
+            // UIKit 姝ゆ椂宸茬粡鍒濆鍖栧ソ锛岃繖鎵嶆槸鑳藉畨鍏ㄨ鍙栫殑鏃舵満
+            gRealMaxFPS = [UIScreen mainScreen].maximumFramesPerSecond;
+
             P120Meter *meter = [P120Meter new];
             CADisplayLink *link = [CADisplayLink displayLinkWithTarget:meter selector:@selector(tick:)];
             gInternal = YES;
@@ -822,7 +822,7 @@ static void P120Watchdog(void)
             gInternal = NO;
             [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 
-            // 看门狗：每秒重新压 120 + 补 hook Unity 符号 + 心跳日志
+            // 鐪嬮棬鐙楋細姣忕閲嶆柊鍘?120 + 琛?hook Unity 绗﹀彿 + 蹇冭烦鏃ュ織
             gWatchdog = [NSTimer timerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) {
                 P120Watchdog();
             }];
@@ -834,3 +834,4 @@ static void P120Watchdog(void)
         });
     }
 }
+

@@ -1,11 +1,12 @@
 Package: com.wjf.pin120
 Name: Pin120
-Version: 2.6.0
+Version: 2.7.0
 Architecture: iphoneos-arm
 Description: Keeps ProMotion pinned at 120Hz in games on iPad Pro (2018/A12X). Forces UIScreen.maximumFramesPerSecond, CADisplayLink and Unity targetFrameRate to 120 and re-pins every display link once per second. Includes a load self-test (writes pin120.loaded.txt into the app container) and an in-game HUD.
 Maintainer: wjf
 Author: wjf
 Section: Tweaks
 Depends: firmware (>= 15.0)
+
 
 
